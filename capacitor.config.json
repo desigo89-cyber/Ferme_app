@@ -1,0 +1,8 @@
+{
+  "appId": "com.maferme.gestion",
+  "appName": "Gestion de Ferme",
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "https"
+  }
+}

@@ -1,0 +1,5 @@
+package com.maferme.gestion;
+
+import com.getcapacitor.BridgeActivity;
+
+public class MainActivity extends BridgeActivity {}
