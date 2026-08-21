@@ -3,7 +3,8 @@ import {
   Sprout, PawPrint, Boxes, Wallet, ListChecks, LayoutDashboard,
   Plus, X, Trash2, AlertTriangle, Calendar, ChevronRight, Heart, Baby, Milk,
   FileText, Landmark, Banknote, Smartphone, Lock, KeyRound, Eye, EyeOff, BarChart3, Package, TrendingUp, Settings,
-  Users, Share2, Palette, Image as ImageIcon, Coins, CalendarOff, UserCircle
+  Users, Share2, Palette, Image as ImageIcon, Coins, CalendarOff, UserCircle, Building2,
+  PiggyBank, Percent, HandCoins
 } from "lucide-react";
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
@@ -24,7 +25,10 @@ const fmtDate = (d) => (d ? new Date(d).toLocaleDateString("fr-FR", { day: "2-di
 const STORAGE_KEY = "ferme-app-data-v1";
 
 const emptyState = {
-  ferme: { nom: "Ma Ferme", logo: null, devise: "FCFA", theme: "vert" },
+  ferme: {
+    nom: "Ma Ferme", logo: null, devise: "FCFA", theme: "vert",
+    nif: "", rccm: "", adresse: "", email: "", telephone: "", siteWeb: "", reseauxSociaux: "",
+  },
   parcelles: [],
   animaux: [],
   stocks: [],
@@ -35,6 +39,9 @@ const emptyState = {
   mouvementsStock: [],
   produits: [],
   employes: [],
+  investissements: [],
+  investisseurs: [],
+  prets: [],
   security: { password: null },
 };
 
@@ -53,13 +60,21 @@ const DOC_LABELS = { recu: "Reçu", facture: "Facture", bordereau_reception: "Bo
 
 const CONTRAT_LABELS = { cdi: "CDI", cdd: "CDD", stage: "Stage", essai: "Période d'essai", prestation: "Prestation" };
 const CHARGE_LABELS = { variable: "Charge variable", fixe: "Charge fixe", sociale: "Charge sociale", salariale: "Salaire", autre: "Autre" };
+const CHARGE_CATEGORIES = {
+  variable: ["Matière première", "Semences", "Alimentation animale", "Intrants agricoles", "Emballage"],
+  fixe: ["Carburant", "Communication", "Repas", "Condiment", "Fournitures", "Bureautique", "Petits matériels", "Loyer", "Assurance", "Entretien matériel"],
+};
 const DEVISES = ["FCFA", "EUR", "USD", "GNF", "MAD", "CDF"];
 
 const THEMES = {
   vert: { primary: "#2F3B2C", primaryDark: "#242E21", accent: "#C08A2E", accentDark: "#A9761F", bg: "#EFEAD9", nav: "#B9C4AE" },
   bleu: { primary: "#1E3A5F", primaryDark: "#162C48", accent: "#3B82A0", accentDark: "#2F6A85", bg: "#E8EEF2", nav: "#A9C2D6" },
   brun: { primary: "#4A342A", primaryDark: "#3A281F", accent: "#B5651D", accentDark: "#95511A", bg: "#F0E6DA", nav: "#C9AE97" },
+  vertBlanc: { primary: "#2F3B2C", primaryDark: "#242E21", accent: "#C08A2E", accentDark: "#A9761F", bg: "#FFFFFF", nav: "#B9C4AE", totalBg: "#2F3B2C", totalText: "#FFFFFF" },
+  bleuBlanc: { primary: "#1E3A5F", primaryDark: "#162C48", accent: "#3B82A0", accentDark: "#2F6A85", bg: "#FFFFFF", nav: "#A9C2D6", totalBg: "#1E3A5F", totalText: "#FFFFFF" },
 };
+
+const THEME_LABELS = { vert: "Vert", bleu: "Bleu", brun: "Brun", vertBlanc: "Vert — corps blanc", bleuBlanc: "Bleu — corps blanc" };
 
 function money(amount, devise) {
   return `${Number(amount || 0).toLocaleString("fr-FR")} ${devise || "FCFA"}`;
@@ -104,9 +119,9 @@ function Button({ children, onClick, variant = "primary", type = "button", class
   );
 }
 
-function Field({ label, children }) {
+function Field({ label, children, className = "" }) {
   return (
-    <label className="block">
+    <label className={`block ${className}`}>
       <span className="block text-xs font-medium text-[#6E6B58] mb-1">{label}</span>
       {children}
     </label>
@@ -205,6 +220,7 @@ export default function FarmApp() {
     { id: "finances", label: "Finances", icon: Wallet },
     { id: "produits", label: "Produits", icon: Package },
     { id: "comptes", label: "Comptes", icon: Landmark },
+    { id: "investissements", label: "Investissements", icon: PiggyBank },
     { id: "documents", label: "Documents", icon: FileText },
     { id: "rapport", label: "Rapport", icon: BarChart3 },
     { id: "personnel", label: "Personnel", icon: Users },
@@ -219,6 +235,8 @@ export default function FarmApp() {
     "--color-accent-dark": theme.accentDark,
     "--color-bg": theme.bg,
     "--color-nav": theme.nav,
+    "--color-total-bg": theme.totalBg || "transparent",
+    "--color-total-text": theme.totalText || "inherit",
   };
 
   if (loading) {
@@ -300,6 +318,7 @@ export default function FarmApp() {
         {tab === "finances" && <Finances data={data} update={update} />}
         {tab === "produits" && <Produits data={data} update={update} />}
         {tab === "comptes" && <Comptes data={data} update={update} />}
+        {tab === "investissements" && <Investissements data={data} update={update} />}
         {tab === "documents" && <Documents data={data} update={update} />}
         {tab === "rapport" && <RapportMensuel data={data} />}
         {tab === "personnel" && <Personnel data={data} update={update} />}
@@ -361,6 +380,11 @@ function ParametresModal({ data, update, onClose }) {
   const hasPassword = !!data.security?.password;
   const [nomFerme, setNomFerme] = useState(data.ferme.nom);
   const [devise, setDevise] = useState(data.ferme.devise || "FCFA");
+  const [infoEntreprise, setInfoEntreprise] = useState({
+    nif: data.ferme.nif || "", rccm: data.ferme.rccm || "", adresse: data.ferme.adresse || "",
+    email: data.ferme.email || "", telephone: data.ferme.telephone || "",
+    siteWeb: data.ferme.siteWeb || "", reseauxSociaux: data.ferme.reseauxSociaux || "",
+  });
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
   const [error, setError] = useState("");
@@ -466,6 +490,18 @@ function ParametresModal({ data, update, onClose }) {
 
   const saveTheme = (val) => {
     update((d) => { d.ferme.theme = val; });
+  };
+
+  const saveInfoEntreprise = () => {
+    update((d) => {
+      d.ferme.nif = infoEntreprise.nif.trim();
+      d.ferme.rccm = infoEntreprise.rccm.trim();
+      d.ferme.adresse = infoEntreprise.adresse.trim();
+      d.ferme.email = infoEntreprise.email.trim();
+      d.ferme.telephone = infoEntreprise.telephone.trim();
+      d.ferme.siteWeb = infoEntreprise.siteWeb.trim();
+      d.ferme.reseauxSociaux = infoEntreprise.reseauxSociaux.trim();
+    });
   };
 
   const uploadLogo = (e) => {
@@ -583,6 +619,21 @@ function ParametresModal({ data, update, onClose }) {
         </div>
 
         <div className="border-t border-[#DFD8C2] pt-4">
+          <h4 className="text-sm font-medium mb-2 flex items-center gap-1.5"><Building2 size={14} /> Informations de l'entreprise</h4>
+          <p className="text-xs text-[#8B8974] mb-3">Ces informations pourront apparaître sur vos factures et documents officiels.</p>
+          <div className="grid sm:grid-cols-2 gap-3">
+            <Field label="NIF"><Input value={infoEntreprise.nif} onChange={(e) => setInfoEntreprise((v) => ({ ...v, nif: e.target.value }))} /></Field>
+            <Field label="RCCM"><Input value={infoEntreprise.rccm} onChange={(e) => setInfoEntreprise((v) => ({ ...v, rccm: e.target.value }))} /></Field>
+            <Field label="Adresse" className="sm:col-span-2"><Input value={infoEntreprise.adresse} onChange={(e) => setInfoEntreprise((v) => ({ ...v, adresse: e.target.value }))} /></Field>
+            <Field label="Email"><Input type="email" value={infoEntreprise.email} onChange={(e) => setInfoEntreprise((v) => ({ ...v, email: e.target.value }))} /></Field>
+            <Field label="Téléphone"><Input value={infoEntreprise.telephone} onChange={(e) => setInfoEntreprise((v) => ({ ...v, telephone: e.target.value }))} /></Field>
+            <Field label="Site web"><Input value={infoEntreprise.siteWeb} onChange={(e) => setInfoEntreprise((v) => ({ ...v, siteWeb: e.target.value }))} /></Field>
+            <Field label="Réseaux sociaux"><Input value={infoEntreprise.reseauxSociaux} onChange={(e) => setInfoEntreprise((v) => ({ ...v, reseauxSociaux: e.target.value }))} placeholder="Ex. Facebook, Instagram..." /></Field>
+          </div>
+          <Button variant="ghost" className="mt-3" onClick={saveInfoEntreprise}>Enregistrer les informations</Button>
+        </div>
+
+        <div className="border-t border-[#DFD8C2] pt-4">
           <h4 className="text-sm font-medium mb-2 flex items-center gap-1.5"><Coins size={14} /> Devise</h4>
           <Select value={devise} onChange={(e) => saveDevise(e.target.value)}>
             {DEVISES.map((dv) => <option key={dv} value={dv}>{dv}</option>)}
@@ -592,7 +643,7 @@ function ParametresModal({ data, update, onClose }) {
 
         <div className="border-t border-[#DFD8C2] pt-4">
           <h4 className="text-sm font-medium mb-2 flex items-center gap-1.5"><Palette size={14} /> Apparence de l'interface</h4>
-          <div className="flex gap-3">
+          <div className="flex flex-wrap gap-3">
             {Object.entries(THEMES).map(([key, t]) => (
               <button
                 key={key}
@@ -603,7 +654,7 @@ function ParametresModal({ data, update, onClose }) {
                   <span className="w-1/2 h-full" style={{ backgroundColor: t.primary }} />
                   <span className="w-1/2 h-full" style={{ backgroundColor: t.accent }} />
                 </span>
-                <span className="text-xs capitalize">{key}</span>
+                <span className="text-xs text-center leading-tight">{THEME_LABELS[key] || key}</span>
               </button>
             ))}
           </div>
@@ -1380,6 +1431,13 @@ function Finances({ data, update }) {
   const revenus = data.transactions.filter((t) => t.type === "revenu").reduce((s, t) => s + Number(t.montant || 0), 0);
   const depenses = data.transactions.filter((t) => t.type === "depense").reduce((s, t) => s + Number(t.montant || 0), 0);
 
+  const tresorerie = useMemo(() => {
+    const especes = data.transactions.filter((t) => !t.compteId).reduce((s, t) => s + (t.type === "revenu" ? Number(t.montant || 0) : -Number(t.montant || 0)), 0);
+    const parCompte = data.comptes.map((c) => ({ id: c.id, nom: c.nom, type: c.type, solde: soldeCompte(data, c.id) }));
+    const total = especes + parCompte.reduce((s, c) => s + c.solde, 0);
+    return { especes, parCompte, total };
+  }, [data.transactions, data.comptes]);
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -1392,6 +1450,27 @@ function Finances({ data, update }) {
         <StatCard label="Dépenses" value={money(depenses, data.ferme.devise)} icon={Wallet} tone="bad" />
         <StatCard label="Solde" value={money(revenus - depenses, data.ferme.devise)} icon={Wallet} tone={revenus - depenses >= 0 ? "good" : "bad"} />
       </div>
+
+      <Card className="p-4">
+        <h3 className="font-serif text-base mb-3 flex items-center gap-2"><Landmark size={16} className="text-[#8B5E3C]" /> Trésorerie</h3>
+        <p className="text-xs text-[#8B8974]">Position de trésorerie totale (tous comptes + espèces)</p>
+        <p className={`font-serif text-2xl mt-1 ${tresorerie.total >= 0 ? "text-[#3C5A34]" : "text-[#A6402A]"}`}>{money(tresorerie.total, data.ferme.devise)}</p>
+        <div className="text-sm space-y-1.5 border-t border-[#EFEAD9] pt-3 mt-3">
+          <div className="flex justify-between">
+            <span className="text-[#8B8974]">Espèces (non rattachées)</span>
+            <span>{money(tresorerie.especes, data.ferme.devise)}</span>
+          </div>
+          {tresorerie.parCompte.map((c) => (
+            <div key={c.id} className="flex justify-between">
+              <span className="text-[#8B8974]">{COMPTE_LABELS[c.type]} ({c.nom})</span>
+              <span>{money(c.solde, data.ferme.devise)}</span>
+            </div>
+          ))}
+        </div>
+        {data.comptes.length === 0 && (
+          <p className="text-xs text-[#8B8974] mt-3">Ajoutez vos comptes (banque, caisse, mobile money) dans l'onglet Comptes pour un suivi de trésorerie plus détaillé.</p>
+        )}
+      </Card>
 
       {data.transactions.length === 0 ? (
         <EmptyState icon={Wallet} text="Aucune transaction enregistrée." action={<Button variant="ghost" onClick={() => setShowAdd(true)}>Ajouter une transaction</Button>} />
@@ -1452,14 +1531,26 @@ function TransactionForm({ onSubmit, comptes = [], produits = [], employes = [],
           <option value="revenu">Revenu</option>
         </Select>
       </Field>
-      <Field label="Catégorie"><Input value={categorie} onChange={(e) => setCategorie(e.target.value)} placeholder="Ex. Vente lait, Achat semence" /></Field>
+      <Field label="Catégorie">
+        <Input
+          value={categorie}
+          onChange={(e) => setCategorie(e.target.value)}
+          placeholder="Ex. Vente lait, Achat semence"
+          list={type === "depense" && CHARGE_CATEGORIES[typeCharge] ? "charge-categories" : undefined}
+        />
+        {type === "depense" && CHARGE_CATEGORIES[typeCharge] && (
+          <datalist id="charge-categories">
+            {CHARGE_CATEGORIES[typeCharge].map((c) => <option key={c} value={c} />)}
+          </datalist>
+        )}
+      </Field>
       <Field label={`Montant (${devise})`}><Input type="number" step="0.01" value={montant} onChange={(e) => setMontant(e.target.value)} required /></Field>
       <Field label="Date"><Input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></Field>
       {type === "depense" && (
         <Field label="Type de charge">
           <Select value={typeCharge} onChange={(e) => setTypeCharge(e.target.value)}>
-            <option value="variable">Charge variable (intrants, alimentation...)</option>
-            <option value="fixe">Charge fixe (loyer, assurance...)</option>
+            <option value="variable">Charge variable (liée à l'exploitation : matière première, semences, alimentation...)</option>
+            <option value="fixe">Charge fixe (indirecte : carburant, communication, repas, condiment, fournitures, bureautique, petits matériels...)</option>
             <option value="sociale">Charge sociale (cotisations)</option>
             <option value="salariale">Salaire</option>
             <option value="autre">Autre</option>
@@ -1601,6 +1692,361 @@ function soldeCompte(data, compteId) {
   const mvts = data.transactions.filter((t) => t.compteId === compteId);
   const delta = mvts.reduce((s, t) => s + (t.type === "revenu" ? Number(t.montant || 0) : -Number(t.montant || 0)), 0);
   return Number(compte.soldeInitial || 0) + delta;
+}
+
+// ---------- Investissements, amortissement, capital, prêts ----------
+function calculAmortissement(inv) {
+  const montant = Number(inv.montant || 0);
+  const valeurResiduelle = Number(inv.valeurResiduelle || 0);
+  const duree = Math.max(Number(inv.dureeAmortissement || 0), 0.01);
+  const base = Math.max(montant - valeurResiduelle, 0);
+  const annuel = base / duree;
+  const mensuel = annuel / 12;
+  const dateAchat = new Date(inv.date || today());
+  const maintenant = new Date();
+  let anneesEcoulees = (maintenant - dateAchat) / (1000 * 60 * 60 * 24 * 365.25);
+  anneesEcoulees = Math.max(0, Math.min(anneesEcoulees, duree));
+  const cumul = annuel * anneesEcoulees;
+  const vnc = Math.max(montant - cumul, valeurResiduelle);
+  const tauxAvancement = duree > 0 ? Math.min(anneesEcoulees / duree, 1) : 1;
+  return { annuel, mensuel, cumul, vnc, tauxAvancement, termine: tauxAvancement >= 1 };
+}
+
+function calculPret(pret) {
+  const montant = Number(pret.montant || 0);
+  const tauxAnnuel = Number(pret.tauxInteret || 0) / 100;
+  const tauxMensuel = tauxAnnuel / 12;
+  const n = Math.max(Math.round(Number(pret.dureeMois || 1)), 1);
+  const mensualite = tauxMensuel > 0
+    ? (montant * tauxMensuel) / (1 - Math.pow(1 + tauxMensuel, -n))
+    : montant / n;
+  const dateDebut = new Date(pret.dateDebut || today());
+  const echeances = [];
+  let solde = montant;
+  for (let i = 1; i <= n; i++) {
+    const interet = solde * tauxMensuel;
+    let principal = mensualite - interet;
+    if (i === n) principal = solde;
+    solde = Math.max(solde - principal, 0);
+    const d = new Date(dateDebut);
+    d.setMonth(d.getMonth() + i);
+    echeances.push({ n: i, date: d.toISOString().slice(0, 10), interet, principal, solde, mensualite: principal + interet });
+  }
+  const maintenant = today();
+  const echeancesPassees = echeances.filter((e) => e.date <= maintenant);
+  const montantRembourseCumule = echeancesPassees.reduce((s, e) => s + e.mensualite, 0);
+  const interetPayeCumule = echeancesPassees.reduce((s, e) => s + e.interet, 0);
+  const soldeRestant = echeancesPassees.length ? echeancesPassees[echeancesPassees.length - 1].solde : montant;
+  const totalInteret = echeances.reduce((s, e) => s + e.interet, 0);
+  const prochaineEcheance = echeances.find((e) => e.date > maintenant);
+  return {
+    mensualite, echeances, echeancesPassees, montantRembourseCumule, interetPayeCumule,
+    soldeRestant, totalInteret, totalARembourser: montant + totalInteret, prochaineEcheance,
+    solde: solde >= 0 ? solde : 0,
+  };
+}
+
+function Investissements({ data, update }) {
+  const [subTab, setSubTab] = useState("investissements");
+  const [showAddInv, setShowAddInv] = useState(false);
+  const [showAddInvestisseur, setShowAddInvestisseur] = useState(false);
+  const [showAddPret, setShowAddPret] = useState(false);
+  const [selectedPret, setSelectedPret] = useState(null);
+  const devise = data.ferme.devise;
+
+  const totalCapital = data.investisseurs.reduce((s, i) => s + Number(i.montantInvesti || 0), 0);
+
+  const resultatNetGlobal = useMemo(() => {
+    const ca = data.transactions.filter((t) => t.type === "revenu").reduce((s, t) => s + Number(t.montant || 0), 0);
+    const depensesHorsPrets = data.transactions.filter((t) => t.type === "depense").reduce((s, t) => s + Number(t.montant || 0), 0);
+    const remboursementsPrets = data.prets.reduce((s, p) => s + calculPret(p).montantRembourseCumule, 0);
+    const amortissements = data.investissements.reduce((s, inv) => s + calculAmortissement(inv).cumul, 0);
+    return ca - depensesHorsPrets - remboursementsPrets - amortissements;
+  }, [data.transactions, data.prets, data.investissements]);
+
+  const subTabs = [
+    { id: "investissements", label: "Investissements" },
+    { id: "capital", label: "Capital & investisseurs" },
+    { id: "prets", label: "Prêts & emprunts" },
+  ];
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <h2 className="font-serif text-xl">Investissements</h2>
+      </div>
+
+      <div className="flex gap-2 overflow-x-auto no-scrollbar">
+        {subTabs.map((s) => (
+          <button
+            key={s.id}
+            onClick={() => setSubTab(s.id)}
+            className={`px-3 py-1.5 rounded-full text-xs whitespace-nowrap border ${subTab === s.id ? "bg-[var(--color-primary)] text-white border-[var(--color-primary)]" : "bg-white text-[#5A5744] border-[#DFD8C2]"}`}
+          >
+            {s.label}
+          </button>
+        ))}
+      </div>
+
+      {subTab === "investissements" && (
+        <div className="space-y-4">
+          <div className="flex justify-end">
+            <Button variant="accent" onClick={() => setShowAddInv(true)}><Plus size={16} /> Nouvel investissement</Button>
+          </div>
+          {data.investissements.length === 0 ? (
+            <EmptyState icon={PiggyBank} text="Aucun investissement enregistré (matériel, bâtiment, véhicule...)." action={<Button variant="ghost" onClick={() => setShowAddInv(true)}>Ajouter un investissement</Button>} />
+          ) : (
+            <div className="grid sm:grid-cols-2 gap-3">
+              {data.investissements.map((inv) => {
+                const am = calculAmortissement(inv);
+                return (
+                  <Card key={inv.id} className="p-4">
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <h3 className="font-medium">{inv.nom}</h3>
+                        <p className="text-xs text-[#8B8974]">Acquis le {fmtDate(inv.date)} · {money(inv.montant, devise)}</p>
+                      </div>
+                      <button onClick={() => { if (confirm("Supprimer cet investissement ?")) update((d) => { d.investissements = d.investissements.filter((x) => x.id !== inv.id); }); }} className="text-[#C7C2A8] hover:text-[#A6402A]">
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                    <div className="mt-3 text-sm space-y-1">
+                      <div className="flex justify-between"><span className="text-[#8B8974]">Amortissement annuel</span><span>{money(am.annuel, devise)}</span></div>
+                      <div className="flex justify-between"><span className="text-[#8B8974]">Amortissement cumulé</span><span>{money(am.cumul, devise)}</span></div>
+                      <div className="flex justify-between font-medium"><span className="text-[#8B8974]">Valeur nette comptable</span><span>{money(am.vnc, devise)}</span></div>
+                    </div>
+                    <div className="mt-2 h-1.5 bg-[#EFEAD9] rounded-full overflow-hidden">
+                      <div className="h-full bg-[var(--color-accent)]" style={{ width: `${am.tauxAvancement * 100}%` }} />
+                    </div>
+                    <p className="text-xs text-[#8B8974] mt-1">{am.termine ? "Entièrement amorti" : `${Math.round(am.tauxAvancement * 100)}% amorti sur ${inv.dureeAmortissement} an(s)`}</p>
+                  </Card>
+                );
+              })}
+            </div>
+          )}
+          {showAddInv && (
+            <Modal title="Nouvel investissement" onClose={() => setShowAddInv(false)}>
+              <InvestissementForm devise={devise} onSubmit={(vals) => { update((d) => d.investissements.push({ id: uid(), ...vals })); setShowAddInv(false); }} />
+            </Modal>
+          )}
+        </div>
+      )}
+
+      {subTab === "capital" && (
+        <div className="space-y-4">
+          <div className="flex justify-end">
+            <Button variant="accent" onClick={() => setShowAddInvestisseur(true)}><Plus size={16} /> Nouvel investisseur</Button>
+          </div>
+          {data.investisseurs.length === 0 ? (
+            <EmptyState icon={Percent} text="Aucun investisseur enregistré." action={<Button variant="ghost" onClick={() => setShowAddInvestisseur(true)}>Ajouter un investisseur</Button>} />
+          ) : (
+            <>
+              <Card className="p-4">
+                <h3 className="font-serif text-base mb-1">Répartition du capital</h3>
+                <p className="text-xs text-[#8B8974] mb-3">Capital total investi : {money(totalCapital, devise)}</p>
+                <div className="space-y-2">
+                  {data.investisseurs.map((inv) => {
+                    const pct = totalCapital > 0 ? (Number(inv.montantInvesti || 0) / totalCapital) * 100 : 0;
+                    return (
+                      <div key={inv.id} className="text-sm">
+                        <div className="flex justify-between"><span>{inv.nom}</span><span className="text-[#8B8974]">{pct.toFixed(1)}%</span></div>
+                        <div className="h-1.5 bg-[#EFEAD9] rounded-full overflow-hidden mt-1"><div className="h-full bg-[var(--color-accent)]" style={{ width: `${pct}%` }} /></div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </Card>
+
+              <Card className="p-4">
+                <h3 className="font-serif text-base mb-1">Répartition des bénéfices</h3>
+                <p className="text-xs text-[#8B8974] mb-3">
+                  Résultat net global (revenus − dépenses − remboursements de prêts − amortissements) : <span className={resultatNetGlobal >= 0 ? "text-[#3C5A34]" : "text-[#A6402A]"}>{money(resultatNetGlobal, devise)}</span>
+                </p>
+                {resultatNetGlobal <= 0 ? (
+                  <p className="text-xs text-[#8B8974]">Pas de bénéfice à répartir pour le moment.</p>
+                ) : (
+                  <div className="divide-y divide-[#EFEAD9]">
+                    {data.investisseurs.map((inv) => {
+                      const pct = totalCapital > 0 ? Number(inv.montantInvesti || 0) / totalCapital : 0;
+                      const part = resultatNetGlobal * pct;
+                      return (
+                        <div key={inv.id} className="py-2 flex justify-between text-sm">
+                          <span>{inv.nom} <span className="text-[#8B8974]">({(pct * 100).toFixed(1)}%)</span></span>
+                          <span className="font-medium">{money(part, devise)}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </Card>
+
+              <Card className="divide-y divide-[#EFEAD9]">
+                {data.investisseurs.map((inv) => (
+                  <div key={inv.id} className="p-3 flex items-center justify-between text-sm">
+                    <div>
+                      <p className="font-medium">{inv.nom}</p>
+                      <p className="text-xs text-[#8B8974]">Capital investi le {fmtDate(inv.date)}{inv.telephone ? ` · ${inv.telephone}` : ""}</p>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="font-medium">{money(inv.montantInvesti, devise)}</span>
+                      <button onClick={() => { if (confirm("Supprimer cet investisseur ?")) update((d) => { d.investisseurs = d.investisseurs.filter((x) => x.id !== inv.id); }); }} className="text-[#C7C2A8] hover:text-[#A6402A]">
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </Card>
+            </>
+          )}
+          {showAddInvestisseur && (
+            <Modal title="Nouvel investisseur" onClose={() => setShowAddInvestisseur(false)}>
+              <InvestisseurForm devise={devise} onSubmit={(vals) => { update((d) => d.investisseurs.push({ id: uid(), ...vals })); setShowAddInvestisseur(false); }} />
+            </Modal>
+          )}
+        </div>
+      )}
+
+      {subTab === "prets" && (
+        <div className="space-y-4">
+          <div className="flex justify-end">
+            <Button variant="accent" onClick={() => setShowAddPret(true)}><Plus size={16} /> Nouveau prêt</Button>
+          </div>
+          <p className="text-xs text-[#8B8974]">Les mensualités des prêts sont automatiquement ajoutées aux charges fixes dans le tableau Marge brute & charges (Finances), au fur et à mesure des échéances passées.</p>
+          {data.prets.length === 0 ? (
+            <EmptyState icon={HandCoins} text="Aucun prêt ou emprunt enregistré (bancaire, familial, ami, particulier)." action={<Button variant="ghost" onClick={() => setShowAddPret(true)}>Ajouter un prêt</Button>} />
+          ) : (
+            <div className="grid sm:grid-cols-2 gap-3">
+              {data.prets.map((pret) => {
+                const calc = calculPret(pret);
+                return (
+                  <Card key={pret.id} className="p-4 cursor-pointer hover:border-[var(--color-accent)]" onClick={() => setSelectedPret(pret.id)}>
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <Badge tone="accent">{pret.type === "bancaire" ? "Bancaire" : "Tiers (famille/ami/particulier)"}</Badge>
+                        <h3 className="font-medium mt-1">{pret.preteur}</h3>
+                        <p className="text-xs text-[#8B8974]">{money(pret.montant, devise)} · {pret.tauxInteret}%/an · {pret.dureeMois} mois</p>
+                      </div>
+                      <button onClick={(e) => { e.stopPropagation(); if (confirm("Supprimer ce prêt ?")) update((d) => { d.prets = d.prets.filter((x) => x.id !== pret.id); }); }} className="text-[#C7C2A8] hover:text-[#A6402A]">
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                    <div className="mt-3 text-sm space-y-1">
+                      <div className="flex justify-between"><span className="text-[#8B8974]">Mensualité</span><span>{money(calc.mensualite, devise)}</span></div>
+                      <div className="flex justify-between"><span className="text-[#8B8974]">Solde restant dû</span><span>{money(calc.soldeRestant, devise)}</span></div>
+                      <div className="flex justify-between"><span className="text-[#8B8974]">Intérêts déjà payés</span><span>{money(calc.interetPayeCumule, devise)}</span></div>
+                    </div>
+                  </Card>
+                );
+              })}
+            </div>
+          )}
+          {showAddPret && (
+            <Modal title="Nouveau prêt / emprunt" onClose={() => setShowAddPret(false)}>
+              <PretForm devise={devise} onSubmit={(vals) => { update((d) => d.prets.push({ id: uid(), ...vals })); setShowAddPret(false); }} />
+            </Modal>
+          )}
+          {selectedPret && (() => {
+            const pret = data.prets.find((p) => p.id === selectedPret);
+            if (!pret) return null;
+            const calc = calculPret(pret);
+            return (
+              <Modal title={`Échéancier — ${pret.preteur}`} onClose={() => setSelectedPret(null)}>
+                <div className="space-y-3">
+                  <div className="grid grid-cols-2 gap-3 text-sm">
+                    <div><p className="text-xs text-[#8B8974]">Montant emprunté</p><p className="font-medium">{money(pret.montant, devise)}</p></div>
+                    <div><p className="text-xs text-[#8B8974]">Total à rembourser</p><p className="font-medium">{money(calc.totalARembourser, devise)}</p></div>
+                    <div><p className="text-xs text-[#8B8974]">Total intérêts</p><p className="font-medium">{money(calc.totalInteret, devise)}</p></div>
+                    <div><p className="text-xs text-[#8B8974]">Mensualité</p><p className="font-medium">{money(calc.mensualite, devise)}</p></div>
+                  </div>
+                  <div className="max-h-72 overflow-y-auto border-t border-[#DFD8C2] pt-2">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="text-[#8B8974] text-left">
+                          <th className="pb-1">Échéance</th><th className="pb-1">Date</th><th className="pb-1 text-right">Intérêt</th><th className="pb-1 text-right">Principal</th><th className="pb-1 text-right">Solde</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {calc.echeances.map((e) => (
+                          <tr key={e.n} className={e.date <= today() ? "text-[#232620]" : "text-[#C7C2A8]"}>
+                            <td className="py-0.5">{e.n}</td>
+                            <td className="py-0.5">{fmtDate(e.date)}</td>
+                            <td className="py-0.5 text-right">{money(e.interet, devise)}</td>
+                            <td className="py-0.5 text-right">{money(e.principal, devise)}</td>
+                            <td className="py-0.5 text-right">{money(e.solde, devise)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </Modal>
+            );
+          })()}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function InvestissementForm({ onSubmit, devise = "FCFA" }) {
+  const [nom, setNom] = useState("");
+  const [montant, setMontant] = useState("");
+  const [date, setDate] = useState(today());
+  const [dureeAmortissement, setDureeAmortissement] = useState("5");
+  const [valeurResiduelle, setValeurResiduelle] = useState("0");
+  return (
+    <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); if (!nom || !montant) return; onSubmit({ nom, montant, date, dureeAmortissement, valeurResiduelle }); }}>
+      <Field label="Nom de l'investissement"><Input value={nom} onChange={(e) => setNom(e.target.value)} placeholder="Ex. Tracteur, forage, hangar..." /></Field>
+      <Field label={`Montant investi (${devise})`}><Input type="number" step="0.01" value={montant} onChange={(e) => setMontant(e.target.value)} required /></Field>
+      <Field label="Date d'acquisition"><Input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></Field>
+      <Field label="Durée d'amortissement (années)"><Input type="number" step="1" min="1" value={dureeAmortissement} onChange={(e) => setDureeAmortissement(e.target.value)} /></Field>
+      <Field label={`Valeur résiduelle (${devise})`}><Input type="number" step="0.01" value={valeurResiduelle} onChange={(e) => setValeurResiduelle(e.target.value)} /></Field>
+      <Button type="submit" variant="accent" className="w-full">Enregistrer</Button>
+    </form>
+  );
+}
+
+function InvestisseurForm({ onSubmit, devise = "FCFA" }) {
+  const [nom, setNom] = useState("");
+  const [montantInvesti, setMontantInvesti] = useState("");
+  const [date, setDate] = useState(today());
+  const [telephone, setTelephone] = useState("");
+  return (
+    <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); if (!nom || !montantInvesti) return; onSubmit({ nom, montantInvesti, date, telephone }); }}>
+      <Field label="Nom de l'investisseur"><Input value={nom} onChange={(e) => setNom(e.target.value)} /></Field>
+      <Field label={`Capital investi (${devise})`}><Input type="number" step="0.01" value={montantInvesti} onChange={(e) => setMontantInvesti(e.target.value)} required /></Field>
+      <Field label="Date de l'investissement"><Input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></Field>
+      <Field label="Téléphone (optionnel)"><Input value={telephone} onChange={(e) => setTelephone(e.target.value)} /></Field>
+      <Button type="submit" variant="accent" className="w-full">Enregistrer</Button>
+    </form>
+  );
+}
+
+function PretForm({ onSubmit, devise = "FCFA" }) {
+  const [type, setType] = useState("bancaire");
+  const [preteur, setPreteur] = useState("");
+  const [montant, setMontant] = useState("");
+  const [tauxInteret, setTauxInteret] = useState("");
+  const [dureeMois, setDureeMois] = useState("12");
+  const [dateDebut, setDateDebut] = useState(today());
+  const [notes, setNotes] = useState("");
+  return (
+    <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); if (!preteur || !montant || !dureeMois) return; onSubmit({ type, preteur, montant, tauxInteret: tauxInteret || 0, dureeMois, dateDebut, notes }); }}>
+      <Field label="Type de prêt">
+        <Select value={type} onChange={(e) => setType(e.target.value)}>
+          <option value="bancaire">Emprunt bancaire</option>
+          <option value="tiers">Tiers (famille, ami, particulier)</option>
+        </Select>
+      </Field>
+      <Field label={type === "bancaire" ? "Nom de la banque" : "Nom du prêteur"}><Input value={preteur} onChange={(e) => setPreteur(e.target.value)} /></Field>
+      <Field label={`Montant emprunté (${devise})`}><Input type="number" step="0.01" value={montant} onChange={(e) => setMontant(e.target.value)} required /></Field>
+      <Field label="Taux d'intérêt annuel (%)"><Input type="number" step="0.01" value={tauxInteret} onChange={(e) => setTauxInteret(e.target.value)} placeholder="0 si sans intérêt" /></Field>
+      <Field label="Durée (mois)"><Input type="number" step="1" min="1" value={dureeMois} onChange={(e) => setDureeMois(e.target.value)} required /></Field>
+      <Field label="Date de début"><Input type="date" value={dateDebut} onChange={(e) => setDateDebut(e.target.value)} /></Field>
+      <Field label="Notes (optionnel)"><TextArea value={notes} onChange={(e) => setNotes(e.target.value)} /></Field>
+      <Button type="submit" variant="accent" className="w-full">Enregistrer</Button>
+    </form>
+  );
 }
 
 function Comptes({ data, update }) {
@@ -1750,7 +2196,7 @@ function Documents({ data, update }) {
                 {doc.lignes && doc.lignes.length > 0 && (
                   <ul className="mt-1 text-xs text-[#8B8974] space-y-0.5">
                     {doc.lignes.map((l) => (
-                      <li key={l.id}>{l.produit || "?"} — {l.quantite} × {money(l.prixUnitaire, data.ferme.devise)}</li>
+                      <li key={l.id}>{l.produit || "?"} — {l.quantite} {l.unite || ""} × {money(l.prixUnitaire, data.ferme.devise)}</li>
                     ))}
                   </ul>
                 )}
@@ -1808,8 +2254,16 @@ function DocumentForm({ onSubmit, stocks = [], produits = [], devise = "FCFA" })
   const showLignes = type === "facture" || type === "commande";
   const totalLignes = lignes.reduce((s, l) => s + Number(l.quantite || 0) * Number(l.prixUnitaire || 0), 0);
 
-  const addLigne = () => setLignes((ls) => [...ls, { id: uid(), produit: "", quantite: "", prixUnitaire: "" }]);
-  const updateLigne = (id, field, value) => setLignes((ls) => ls.map((l) => (l.id === id ? { ...l, [field]: value } : l)));
+  const addLigne = () => setLignes((ls) => [...ls, { id: uid(), produit: "", quantite: "", unite: "", prixUnitaire: "" }]);
+  const updateLigne = (id, field, value) => setLignes((ls) => ls.map((l) => {
+    if (l.id !== id) return l;
+    const updated = { ...l, [field]: value };
+    if (field === "produit") {
+      const p = produits.find((pr) => pr.nom === value);
+      if (p && !l.unite) updated.unite = p.unite;
+    }
+    return updated;
+  }));
   const removeLigne = (id) => setLignes((ls) => ls.filter((l) => l.id !== id));
 
   return (
@@ -1834,9 +2288,12 @@ function DocumentForm({ onSubmit, stocks = [], produits = [], devise = "FCFA" })
         <div className="rounded-md border border-[#DFD8C2] bg-[#FBF9F2] p-3 space-y-3">
           <p className="text-xs text-[#6E6B58]">Détail des produits — le montant total se calcule automatiquement.</p>
           {lignes.map((l) => (
-            <div key={l.id} className="grid grid-cols-[1fr_1fr] sm:grid-cols-[2fr_1fr_1fr_auto] gap-2 items-end">
+            <div key={l.id} className="grid grid-cols-2 sm:grid-cols-[2fr_0.8fr_0.8fr_1fr_auto] gap-2 items-end">
               <Field label="Produit">
                 <Input list="produits-liste" value={l.produit} onChange={(e) => updateLigne(l.id, "produit", e.target.value)} placeholder="Ex. Semence de maïs" />
+              </Field>
+              <Field label="Unité">
+                <Input value={l.unite} onChange={(e) => updateLigne(l.id, "unite", e.target.value)} placeholder="kg, sac, L..." />
               </Field>
               <Field label="Quantité">
                 <Input type="number" step="0.01" value={l.quantite} onChange={(e) => updateLigne(l.id, "quantite", e.target.value)} />
@@ -1855,9 +2312,9 @@ function DocumentForm({ onSubmit, stocks = [], produits = [], devise = "FCFA" })
           </datalist>
           <Button type="button" variant="ghost" onClick={addLigne}><Plus size={14} /> Ajouter une ligne</Button>
           {lignes.length > 0 && (
-            <div className="flex justify-between border-t border-[#DFD8C2] pt-2 text-sm font-medium">
+            <div className="flex justify-between bg-[var(--color-total-bg)] text-[var(--color-total-text)] rounded-md px-2 py-2 text-xs font-serif font-bold">
               <span>Total</span>
-              <span>{money(totalLignes, devise)}</span>
+              <span className="text-[var(--color-accent)]">{money(totalLignes, devise)}</span>
             </div>
           )}
         </div>
@@ -1932,16 +2389,31 @@ function RapportMensuel({ data }) {
   const chargesEtMarge = useMemo(() => {
     const ca = data.transactions.filter((t) => t.type === "revenu").reduce((s, t) => s + Number(t.montant || 0), 0);
     const parType = { variable: 0, fixe: 0, sociale: 0, salariale: 0, autre: 0 };
+    const parCategorieCharge = { variable: {}, fixe: {} };
     data.transactions.filter((t) => t.type === "depense").forEach((t) => {
       const key = t.typeCharge && parType.hasOwnProperty(t.typeCharge) ? t.typeCharge : "autre";
       parType[key] += Number(t.montant || 0);
+      if (key === "variable" || key === "fixe") {
+        const cat = t.categorie || "Non catégorisé";
+        parCategorieCharge[key][cat] = (parCategorieCharge[key][cat] || 0) + Number(t.montant || 0);
+      }
     });
+    const remboursementsPrets = (data.prets || []).reduce((s, p) => s + calculPret(p).montantRembourseCumule, 0);
+    if (remboursementsPrets > 0) {
+      parType.fixe += remboursementsPrets;
+      parCategorieCharge.fixe["Remboursement de prêts (auto)"] = (parCategorieCharge.fixe["Remboursement de prêts (auto)"] || 0) + remboursementsPrets;
+    }
+    const amortissements = (data.investissements || []).reduce((s, inv) => s + calculAmortissement(inv).cumul, 0);
+    if (amortissements > 0) {
+      parType.fixe += amortissements;
+      parCategorieCharge.fixe["Dotations aux amortissements (auto)"] = (parCategorieCharge.fixe["Dotations aux amortissements (auto)"] || 0) + amortissements;
+    }
     const chargesVariables = parType.variable;
     const margeBrute = ca - chargesVariables;
     const autresCharges = parType.fixe + parType.sociale + parType.salariale + parType.autre;
     const resultatNet = margeBrute - autresCharges;
-    return { ca, parType, chargesVariables, margeBrute, autresCharges, resultatNet };
-  }, [data.transactions]);
+    return { ca, parType, parCategorieCharge, chargesVariables, margeBrute, autresCharges, resultatNet, remboursementsPrets, amortissements };
+  }, [data.transactions, data.prets, data.investissements]);
 
   const transactionsMois = data.transactions.filter((t) => inMonth(t.date));
   const mouvementsStockMois = data.mouvementsStock.filter((m) => inMonth(m.date));
@@ -2053,7 +2525,7 @@ function RapportMensuel({ data }) {
 
       {chargesEtMarge.ca > 0 && (
         <Card className="p-4">
-          <h3 className="font-serif text-base mb-3">Marge brute & charges (toute la période)</h3>
+          <h3 className="font-serif text-sm mb-3">Marge brute & charges (toute la période)</h3>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
             <div>
               <p className="text-xs text-[#8B8974]">Chiffre d'affaires</p>
@@ -2063,22 +2535,75 @@ function RapportMensuel({ data }) {
               <p className="text-xs text-[#8B8974]">Charges variables</p>
               <p className="font-serif text-lg text-[#A6402A]">{money(chargesEtMarge.chargesVariables, data.ferme.devise)}</p>
             </div>
-            <div>
-              <p className="text-xs text-[#8B8974]">Marge brute</p>
-              <p className={`font-serif text-lg ${chargesEtMarge.margeBrute >= 0 ? "text-[#3C5A34]" : "text-[#A6402A]"}`}>{money(chargesEtMarge.margeBrute, data.ferme.devise)}</p>
+            <div className="bg-[var(--color-total-bg)] text-[var(--color-total-text)] rounded-md px-2 py-1.5 -m-1">
+              <p className="text-xs opacity-80">Marge brute</p>
+              <p className="font-serif font-bold text-lg text-[var(--color-accent)]">{money(chargesEtMarge.margeBrute, data.ferme.devise)}</p>
             </div>
-            <div>
-              <p className="text-xs text-[#8B8974]">Résultat net</p>
-              <p className={`font-serif text-lg ${chargesEtMarge.resultatNet >= 0 ? "text-[#3C5A34]" : "text-[#A6402A]"}`}>{money(chargesEtMarge.resultatNet, data.ferme.devise)}</p>
+            <div className="bg-[var(--color-total-bg)] text-[var(--color-total-text)] rounded-md px-2 py-1.5 -m-1">
+              <p className="text-xs opacity-80">Résultat net</p>
+              <p className="font-serif font-bold text-lg text-[var(--color-accent)]">{money(chargesEtMarge.resultatNet, data.ferme.devise)}</p>
             </div>
           </div>
-          <div className="text-sm space-y-1 border-t border-[#EFEAD9] pt-3">
+          <div className="text-xs space-y-1 border-t border-[#EFEAD9] pt-3">
             <div className="flex justify-between"><span className="text-[#8B8974]">Charges fixes</span><span>{money(chargesEtMarge.parType.fixe, data.ferme.devise)}</span></div>
             <div className="flex justify-between"><span className="text-[#8B8974]">Charges sociales</span><span>{money(chargesEtMarge.parType.sociale, data.ferme.devise)}</span></div>
             <div className="flex justify-between"><span className="text-[#8B8974]">Salaires</span><span>{money(chargesEtMarge.parType.salariale, data.ferme.devise)}</span></div>
             <div className="flex justify-between"><span className="text-[#8B8974]">Autres charges</span><span>{money(chargesEtMarge.parType.autre, data.ferme.devise)}</span></div>
           </div>
-          <p className="text-xs text-[#8B8974] mt-3">Marge brute = chiffre d'affaires − charges variables. Résultat net = marge brute − charges fixes, sociales, salaires et autres. Le type de charge se choisit lors de la création d'une dépense dans Finances.</p>
+          {(Object.keys(chargesEtMarge.parCategorieCharge.variable).length > 0 || Object.keys(chargesEtMarge.parCategorieCharge.fixe).length > 0) && (
+            <div className="grid sm:grid-cols-2 gap-4 border-t border-[#EFEAD9] pt-3 mt-3">
+              {Object.keys(chargesEtMarge.parCategorieCharge.variable).length > 0 && (
+                <div>
+                  <p className="text-xs font-medium text-[#5A5744] mb-1">Charges variables par catégorie</p>
+                  <div className="text-xs space-y-1">
+                    {Object.entries(chargesEtMarge.parCategorieCharge.variable).sort((a, b) => b[1] - a[1]).map(([cat, val]) => (
+                      <div key={cat} className="flex justify-between"><span className="text-[#8B8974]">{cat}</span><span>{money(val, data.ferme.devise)}</span></div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {Object.keys(chargesEtMarge.parCategorieCharge.fixe).length > 0 && (
+                <div>
+                  <p className="text-xs font-medium text-[#5A5744] mb-1">Charges fixes par catégorie</p>
+                  <div className="text-xs space-y-1">
+                    {Object.entries(chargesEtMarge.parCategorieCharge.fixe).sort((a, b) => b[1] - a[1]).map(([cat, val]) => (
+                      <div key={cat} className="flex justify-between"><span className="text-[#8B8974]">{cat}</span><span>{money(val, data.ferme.devise)}</span></div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+          <p className="text-xs text-[#8B8974] mt-3">Marge brute = chiffre d'affaires − charges variables. Résultat net = marge brute − charges fixes, sociales, salaires et autres. Charges variables = liées directement à l'exploitation (matière première, semences...). Charges fixes = charges indirectes (carburant, communication, repas, condiment, fournitures, bureautique, petits matériels...). Le type et la catégorie de charge se choisissent lors de la création d'une dépense dans Finances.</p>
+        </Card>
+      )}
+
+      {chargesEtMarge.ca > 0 && (
+        <Card className="p-4">
+          <h3 className="font-serif text-sm mb-3">Compte d'exploitation (toute la période)</h3>
+          <table className="w-full text-xs">
+            <tbody>
+              <tr><td className="pt-1 font-medium" colSpan={2}>Produits d'exploitation</td></tr>
+              <tr><td className="py-0.5 pl-3 text-[#8B8974]">Chiffre d'affaires (ventes)</td><td className="py-0.5 text-right">{money(chargesEtMarge.ca, data.ferme.devise)}</td></tr>
+              <tr className="border-t border-[#DFD8C2]"><td className="py-1 font-medium">Total produits d'exploitation</td><td className="py-1 text-right font-medium">{money(chargesEtMarge.ca, data.ferme.devise)}</td></tr>
+
+              <tr><td className="pt-4 font-medium" colSpan={2}>Charges d'exploitation</td></tr>
+              <tr><td className="py-0.5 pl-3 text-[#8B8974]">Charges variables (achats consommés)</td><td className="py-0.5 text-right">{money(chargesEtMarge.parType.variable, data.ferme.devise)}</td></tr>
+              <tr><td className="py-0.5 pl-3 text-[#8B8974]">Charges fixes</td><td className="py-0.5 text-right">{money(chargesEtMarge.parType.fixe, data.ferme.devise)}</td></tr>
+              {chargesEtMarge.remboursementsPrets > 0 && <tr><td className="py-0.5 pl-6 text-[10px] text-[#8B8974]">dont remboursement de prêts</td><td className="py-0.5 text-right text-[10px]">{money(chargesEtMarge.remboursementsPrets, data.ferme.devise)}</td></tr>}
+              {chargesEtMarge.amortissements > 0 && <tr><td className="py-0.5 pl-6 text-[10px] text-[#8B8974]">dont dotations aux amortissements</td><td className="py-0.5 text-right text-[10px]">{money(chargesEtMarge.amortissements, data.ferme.devise)}</td></tr>}
+              <tr><td className="py-0.5 pl-3 text-[#8B8974]">Charges sociales</td><td className="py-0.5 text-right">{money(chargesEtMarge.parType.sociale, data.ferme.devise)}</td></tr>
+              <tr><td className="py-0.5 pl-3 text-[#8B8974]">Charges de personnel (salaires)</td><td className="py-0.5 text-right">{money(chargesEtMarge.parType.salariale, data.ferme.devise)}</td></tr>
+              <tr><td className="py-0.5 pl-3 text-[#8B8974]">Autres charges</td><td className="py-0.5 text-right">{money(chargesEtMarge.parType.autre, data.ferme.devise)}</td></tr>
+              <tr className="border-t border-[#DFD8C2]"><td className="py-1 font-medium">Total charges d'exploitation</td><td className="py-1 text-right font-medium">{money(chargesEtMarge.autresCharges + chargesEtMarge.chargesVariables, data.ferme.devise)}</td></tr>
+
+              <tr>
+                <td className="pt-3 font-serif font-bold text-sm bg-[var(--color-total-bg)] text-[var(--color-total-text)] rounded-l-md px-2">Résultat d'exploitation</td>
+                <td className="pt-3 text-right font-serif font-bold text-sm bg-[var(--color-total-bg)] rounded-r-md px-2 text-[var(--color-accent)]">{money(chargesEtMarge.resultatNet, data.ferme.devise)}</td>
+              </tr>
+            </tbody>
+          </table>
+          <p className="text-xs text-[#8B8974] mt-3">Résultat d'exploitation = total des produits d'exploitation − total des charges d'exploitation (y compris remboursements de prêts et amortissements, comptabilisés automatiquement).</p>
         </Card>
       )}
 
@@ -2206,6 +2731,12 @@ function Produits({ data, update }) {
 
   const stats = data.produits.map((p) => ({ ...p, ...calculProduit(data, p) }));
   const chartData = stats.map((p) => ({ nom: p.nom, benefice: p.benefice, coutTotal: p.coutTotal, chiffreAffaires: p.chiffreAffaires }));
+  const beneficeTotal = stats.reduce((s, p) => s + p.benefice, 0);
+  const chiffreAffairesTotal = stats.reduce((s, p) => s + p.chiffreAffaires, 0);
+  const produitsAvecVentes = stats.filter((p) => p.chiffreAffaires > 0);
+  const produitLePlusRentable = produitsAvecVentes.length > 0
+    ? produitsAvecVentes.reduce((best, p) => (p.benefice > best.benefice ? p : best), produitsAvecVentes[0])
+    : null;
 
   return (
     <div className="space-y-4">
@@ -2222,6 +2753,18 @@ function Produits({ data, update }) {
         />
       ) : (
         <>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            <StatCard label="Chiffre d'affaires total" value={money(chiffreAffairesTotal, data.ferme.devise)} icon={Wallet} tone="good" />
+            <StatCard label="Bénéfice total" value={money(beneficeTotal, data.ferme.devise)} icon={Wallet} tone={beneficeTotal >= 0 ? "good" : "bad"} />
+            {produitLePlusRentable && (
+              <Card className="p-4">
+                <p className="text-xs text-[#8B8974] flex items-center gap-1"><TrendingUp size={12} /> Produit le plus rentable</p>
+                <p className="font-serif text-lg mt-1">{produitLePlusRentable.nom}</p>
+                <p className="text-xs text-[#3C5A34]">{money(produitLePlusRentable.benefice, data.ferme.devise)} de bénéfice</p>
+              </Card>
+            )}
+          </div>
+
           {chartData.some((c) => c.chiffreAffaires || c.coutTotal) && (
             <Card className="p-4">
               <h3 className="font-serif text-base mb-3">Chiffre d'affaires, coût total et bénéfice par produit</h3>
@@ -2245,7 +2788,10 @@ function Produits({ data, update }) {
               <Card key={p.id} className="p-4">
                 <div className="flex items-center justify-between">
                   <div>
-                    <h3 className="font-medium">{p.nom}</h3>
+                    <div className="flex items-center gap-1.5">
+                      <h3 className="font-medium">{p.nom}</h3>
+                      {produitLePlusRentable && p.id === produitLePlusRentable.id && <Badge tone="good">Le plus rentable</Badge>}
+                    </div>
                     <p className="text-xs text-[#8B8974]">Coût de production : {money(p.coutProductionUnitaire, data.ferme.devise)} / {p.unite}</p>
                   </div>
                   <div className="flex items-center gap-2">
@@ -2321,6 +2867,8 @@ function ProduitForm({ onSubmit, initial }) {
 function Personnel({ data, update }) {
   const [showAdd, setShowAdd] = useState(false);
   const [selected, setSelected] = useState(null);
+  const [showPointage, setShowPointage] = useState(false);
+  const [datePointage, setDatePointage] = useState(today());
   const employe = data.employes.find((e) => e.id === selected);
 
   if (employe) return <EmployeDetail employe={employe} data={data} update={update} onBack={() => setSelected(null)} />;
@@ -2329,17 +2877,74 @@ function Personnel({ data, update }) {
     .filter((e) => e.statut === "actif")
     .reduce((s, e) => s + Number(e.salaireMensuel || 0), 0);
 
+  const employesActifs = data.employes.filter((e) => e.statut === "actif");
+  const pointageDuJour = (nom) => today() === datePointage
+    ? `Pointage du jour (${fmtDate(datePointage)})`
+    : `Pointage du ${fmtDate(datePointage)}`;
+
+  const statutDuJour = (e) => (e.presences || []).find((p) => p.date === datePointage)?.statut || null;
+
+  const setPresence = (empId, statut) => {
+    update((d) => {
+      const e = d.employes.find((x) => x.id === empId);
+      e.presences = e.presences || [];
+      const existant = e.presences.find((p) => p.date === datePointage);
+      if (existant) existant.statut = statut;
+      else e.presences.push({ id: uid(), date: datePointage, statut });
+    });
+  };
+
+  const presentsCount = employesActifs.filter((e) => statutDuJour(e) === "present").length;
+  const absentsCount = employesActifs.filter((e) => statutDuJour(e) === "absent").length;
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="font-serif text-xl">Personnel</h2>
-        <Button variant="accent" onClick={() => setShowAdd(true)}><Plus size={16} /> Nouvel employé</Button>
+        <div className="flex gap-2">
+          <Button variant="ghost" onClick={() => setShowPointage((v) => !v)}><ListChecks size={16} /> Pointage</Button>
+          <Button variant="accent" onClick={() => setShowAdd(true)}><Plus size={16} /> Nouvel employé</Button>
+        </div>
       </div>
 
       {data.employes.length > 0 && (
         <Card className="p-4">
           <p className="text-xs text-[#8B8974]">Masse salariale mensuelle (employés actifs)</p>
           <p className="font-serif text-2xl">{money(masseSalarialeMensuelle, data.ferme.devise)}</p>
+        </Card>
+      )}
+
+      {showPointage && employesActifs.length > 0 && (
+        <Card className="p-4">
+          <div className="flex items-center justify-between flex-wrap gap-2 mb-2">
+            <h3 className="font-serif text-base">{pointageDuJour()}</h3>
+            <Input type="date" value={datePointage} onChange={(e) => setDatePointage(e.target.value)} className="w-auto" />
+          </div>
+          <p className="text-xs text-[#8B8974] mb-3">{presentsCount} présent(s) · {absentsCount} absent(s) sur {employesActifs.length} employé(s) actif(s)</p>
+          <div className="divide-y divide-[#EFEAD9]">
+            {employesActifs.map((e) => {
+              const statut = statutDuJour(e);
+              return (
+                <div key={e.id} className="py-2 flex items-center justify-between gap-2">
+                  <span className="text-sm">{e.nom}</span>
+                  <div className="flex gap-1.5">
+                    <button
+                      onClick={() => setPresence(e.id, "present")}
+                      className={`px-2.5 py-1 rounded-md text-xs border ${statut === "present" ? "bg-[#EAF0E6] text-[#3C5A34] border-[#C9DBC0]" : "bg-white text-[#8B8974] border-[#DFD8C2]"}`}
+                    >Présent</button>
+                    <button
+                      onClick={() => setPresence(e.id, "absent")}
+                      className={`px-2.5 py-1 rounded-md text-xs border ${statut === "absent" ? "bg-[#F5DFDA] text-[#A6402A] border-[#E9BCB0]" : "bg-white text-[#8B8974] border-[#DFD8C2]"}`}
+                    >Absent</button>
+                    <button
+                      onClick={() => setPresence(e.id, "retard")}
+                      className={`px-2.5 py-1 rounded-md text-xs border ${statut === "retard" ? "bg-[#F7E9D2] text-[#8B5E14] border-[#EAD3A0]" : "bg-white text-[#8B8974] border-[#DFD8C2]"}`}
+                    >Retard</button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </Card>
       )}
 
@@ -2377,7 +2982,7 @@ function Personnel({ data, update }) {
         <Modal title="Nouvel employé" onClose={() => setShowAdd(false)}>
           <EmployeForm
             onSubmit={(vals) => {
-              update((d) => d.employes.push({ id: uid(), ...vals, conges: [] }));
+              update((d) => d.employes.push({ id: uid(), ...vals, conges: [], presences: [] }));
               setShowAdd(false);
             }}
           />
@@ -2430,6 +3035,8 @@ function EmployeDetail({ employe, data, update, onBack }) {
   const [showEdit, setShowEdit] = useState(false);
   const [showConge, setShowConge] = useState(false);
   const [showPaie, setShowPaie] = useState(false);
+  const moisCourant = today().slice(0, 7);
+  const inMonth = (d) => d && d.slice(0, 7) === moisCourant;
 
   const paiements = data.transactions.filter((t) => t.employeId === employe.id && t.typeCharge === "salariale").sort((a, b) => b.date.localeCompare(a.date));
 
@@ -2487,6 +3094,39 @@ function EmployeDetail({ employe, data, update, onBack }) {
           </ul>
         )}
         <Button variant="ghost" className="mt-3" onClick={() => setShowConge(true)}><Plus size={14} /> Ajouter un congé</Button>
+      </Card>
+
+      <Card className="p-4">
+        <h3 className="font-serif text-base mb-2 flex items-center gap-2"><ListChecks size={16} className="text-[#8B5E3C]" /> Présence & absence</h3>
+        {(!employe.presences || employe.presences.length === 0) ? (
+          <p className="text-sm text-[#8B8974]">Aucun pointage enregistré. Utilisez le bouton « Pointage » dans la liste du personnel pour marquer les présences au jour le jour.</p>
+        ) : (
+          (() => {
+            const presencesMois = employe.presences.filter((p) => inMonth(p.date));
+            const presents = presencesMois.filter((p) => p.statut === "present").length;
+            const absents = presencesMois.filter((p) => p.statut === "absent").length;
+            const retards = presencesMois.filter((p) => p.statut === "retard").length;
+            return (
+              <>
+                <div className="grid grid-cols-3 gap-2 text-center text-sm mb-3">
+                  <div className="bg-[#EAF0E6] rounded-md py-2"><p className="font-serif text-lg text-[#3C5A34]">{presents}</p><p className="text-xs text-[#8B8974]">Présent (mois)</p></div>
+                  <div className="bg-[#F5DFDA] rounded-md py-2"><p className="font-serif text-lg text-[#A6402A]">{absents}</p><p className="text-xs text-[#8B8974]">Absent (mois)</p></div>
+                  <div className="bg-[#F7E9D2] rounded-md py-2"><p className="font-serif text-lg text-[#8B5E14]">{retards}</p><p className="text-xs text-[#8B8974]">Retard (mois)</p></div>
+                </div>
+                <ul className="space-y-1 text-sm max-h-56 overflow-y-auto">
+                  {[...employe.presences].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 30).map((p) => (
+                    <li key={p.id} className="flex justify-between border-b border-[#EFEAD9] pb-1">
+                      <span>{fmtDate(p.date)}</span>
+                      <Badge tone={p.statut === "present" ? "good" : p.statut === "absent" ? "bad" : "warn"}>
+                        {{ present: "Présent", absent: "Absent", retard: "Retard" }[p.statut] || p.statut}
+                      </Badge>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            );
+          })()
+        )}
       </Card>
 
       {showEdit && (
