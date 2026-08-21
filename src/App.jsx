@@ -46,6 +46,8 @@ const emptyState = {
   connexions: [],
   tiers: [],
   departements: [],
+  categoriesDepenses: [],
+  sectionsProduction: [],
   productions: [],
   security: { password: null },
 };
@@ -75,29 +77,51 @@ const HIERARCHIE_POSTES = [
   "Gérant / Responsable de l'entreprise",
   "Promoteur de l'entreprise",
 ];
-const SECTIONS_PRODUCTION_SUGGESTIONS = [
-  "Maraîchage", "Culture céréalière", "Arboriculture", "Pondeuse", "Chair",
-  "Pisciculture", "Apiculture", "Transport", "Vente",
-];
 const COMPETENCES_SUGGESTIONS = [
   "Agronome", "Comptable", "Chauffeur", "Ingénieur", "Gestionnaire", "Vétérinaire", "Commercial", "Technicien",
 ];
 const DOC_PERSO_LABELS = { cv: "CV", attestation: "Attestation", contrat: "Contrat", piece_identite: "Pièce d'identité", diplome: "Diplôme", autre: "Autre" };
 
 const DEPARTEMENTS_DEFAUT = [
-  "Production animale",
-  "Production végétale",
-  "Aquaculture",
-  "Apiculture",
-  "Transport de produits agricoles",
-  "Boutique intrant agricole",
-  "Autres activités",
+  { nom: "Production animale", code: "PA" },
+  { nom: "Production végétale", code: "PV" },
+  { nom: "Aquaculture", code: "AQ" },
+  { nom: "Apiculture", code: "AP" },
+  { nom: "Transport de produits agricoles", code: "TR" },
+  { nom: "Boutique intrant agricole", code: "BI" },
+  { nom: "Autres activités", code: "AU" },
+];
+
+const CATEGORIES_DEPENSES_DEFAUT = [
+  { nom: "Matière première", type: "variable", code: "CHV-01" },
+  { nom: "Semences", type: "variable", code: "CHV-02" },
+  { nom: "Alimentation animale", type: "variable", code: "CHV-03" },
+  { nom: "Intrants agricoles", type: "variable", code: "CHV-04" },
+  { nom: "Emballage", type: "variable", code: "CHV-05" },
+  { nom: "Carburant", type: "fixe", code: "CHF-01" },
+  { nom: "Communication", type: "fixe", code: "CHF-02" },
+  { nom: "Repas", type: "fixe", code: "CHF-03" },
+  { nom: "Condiment", type: "fixe", code: "CHF-04" },
+  { nom: "Fournitures", type: "fixe", code: "CHF-05" },
+  { nom: "Bureautique", type: "fixe", code: "CHF-06" },
+  { nom: "Petits matériels", type: "fixe", code: "CHF-07" },
+  { nom: "Loyer", type: "fixe", code: "CHF-08" },
+  { nom: "Assurance", type: "fixe", code: "CHF-09" },
+  { nom: "Entretien matériel", type: "fixe", code: "CHF-10" },
+];
+
+const SECTIONS_PRODUCTION_DEFAUT = [
+  { nom: "Maraîchage", code: "SEC-01" },
+  { nom: "Culture céréalière", code: "SEC-02" },
+  { nom: "Arboriculture", code: "SEC-03" },
+  { nom: "Pondeuse", code: "SEC-04" },
+  { nom: "Chair", code: "SEC-05" },
+  { nom: "Pisciculture", code: "SEC-06" },
+  { nom: "Apiculture", code: "SEC-07" },
+  { nom: "Transport", code: "SEC-08" },
+  { nom: "Vente", code: "SEC-09" },
 ];
 const CHARGE_LABELS = { variable: "Charge variable", fixe: "Charge fixe", sociale: "Charge sociale", salariale: "Salaire", autre: "Autre" };
-const CHARGE_CATEGORIES = {
-  variable: ["Matière première", "Semences", "Alimentation animale", "Intrants agricoles", "Emballage"],
-  fixe: ["Carburant", "Communication", "Repas", "Condiment", "Fournitures", "Bureautique", "Petits matériels", "Loyer", "Assurance", "Entretien matériel"],
-};
 const DEVISES = ["FCFA", "EUR", "USD", "GNF", "MAD", "CDF"];
 
 const THEMES = {
@@ -214,17 +238,26 @@ export default function FarmApp() {
     (async () => {
       try {
         const res = await storage.get(STORAGE_KEY);
+        const seed = (merged) => {
+          if (!merged.departements || merged.departements.length === 0) {
+            merged.departements = DEPARTEMENTS_DEFAUT.map((d) => ({ id: uid(), ...d, actif: true }));
+          }
+          if (!merged.categoriesDepenses || merged.categoriesDepenses.length === 0) {
+            merged.categoriesDepenses = CATEGORIES_DEPENSES_DEFAUT.map((c) => ({ id: uid(), ...c, actif: true }));
+          }
+          if (!merged.sectionsProduction || merged.sectionsProduction.length === 0) {
+            merged.sectionsProduction = SECTIONS_PRODUCTION_DEFAUT.map((s) => ({ id: uid(), ...s, actif: true }));
+          }
+          return merged;
+        };
         if (res && res.value) {
           const parsed = JSON.parse(res.value);
-          const merged = { ...emptyState, ...parsed };
-          if (!merged.departements || merged.departements.length === 0) {
-            merged.departements = DEPARTEMENTS_DEFAUT.map((nom) => ({ id: uid(), nom, actif: true }));
-          }
+          const merged = seed({ ...emptyState, ...parsed });
           setData(merged);
           const verrouille = !!parsed?.security?.password || (parsed?.gestionnaires || []).length > 0;
           setUnlocked(!verrouille);
         } else {
-          setData({ ...emptyState, departements: DEPARTEMENTS_DEFAUT.map((nom) => ({ id: uid(), nom, actif: true })) });
+          setData(seed({ ...emptyState }));
           setUnlocked(true);
         }
       } catch (e) {
@@ -572,49 +605,55 @@ function GestionnaireForm({ onSubmit }) {
   );
 }
 
-function DepartementsSection({ data, update }) {
-  const [nouveau, setNouveau] = useState("");
+function ListeAvecCodeSection({ data, update, champ, titre, description, icon: Icon }) {
+  const [nouveauNom, setNouveauNom] = useState("");
+  const [nouveauCode, setNouveauCode] = useState("");
   const [editingId, setEditingId] = useState(null);
   const [editingNom, setEditingNom] = useState("");
+  const [editingCode, setEditingCode] = useState("");
+  const liste = data[champ];
 
   const ajouter = () => {
-    if (!nouveau.trim()) return;
-    update((d) => { d.departements.push({ id: uid(), nom: nouveau.trim(), actif: true }); });
-    setNouveau("");
+    if (!nouveauNom.trim()) return;
+    update((d) => { d[champ].push({ id: uid(), nom: nouveauNom.trim(), code: nouveauCode.trim(), actif: true }); });
+    setNouveauNom("");
+    setNouveauCode("");
   };
 
   const sauverEdition = (id) => {
     if (!editingNom.trim()) return;
-    update((d) => { const dep = d.departements.find((x) => x.id === id); dep.nom = editingNom.trim(); });
+    update((d) => { const x = d[champ].find((y) => y.id === id); x.nom = editingNom.trim(); x.code = editingCode.trim(); });
     setEditingId(null);
   };
 
   return (
     <div className="border-t border-[#DFD8C2] pt-4">
-      <h4 className="text-sm font-medium mb-2 flex items-center gap-1.5"><Boxes size={14} /> Départements</h4>
-      <p className="text-xs text-[#8B8974] mb-3">Ces départements permettent de classer les productions et les postes du personnel (production animale, végétale, aquaculture, apiculture, transport, boutique intrant, autres...). Vous pouvez renommer, désactiver ou ajouter les vôtres.</p>
+      <h4 className="text-sm font-medium mb-2 flex items-center gap-1.5"><Icon size={14} /> {titre}</h4>
+      <p className="text-xs text-[#8B8974] mb-3">{description}</p>
 
       <div className="space-y-2 mb-3">
-        {data.departements.map((dep) => (
-          <div key={dep.id} className="flex items-center justify-between text-sm border border-[#DFD8C2] rounded-md px-3 py-2">
-            {editingId === dep.id ? (
+        {liste.map((item) => (
+          <div key={item.id} className="flex items-center justify-between text-sm border border-[#DFD8C2] rounded-md px-3 py-2">
+            {editingId === item.id ? (
               <div className="flex items-center gap-2 flex-1">
-                <Input value={editingNom} onChange={(e) => setEditingNom(e.target.value)} className="flex-1" />
-                <button onClick={() => sauverEdition(dep.id)} className="text-[#8B5E3C] text-xs">OK</button>
+                <Input value={editingNom} onChange={(e) => setEditingNom(e.target.value)} className="flex-1" placeholder="Nom" />
+                <Input value={editingCode} onChange={(e) => setEditingCode(e.target.value)} className="w-24" placeholder="Code" />
+                <button onClick={() => sauverEdition(item.id)} className="text-[#8B5E3C] text-xs">OK</button>
               </div>
             ) : (
               <>
                 <div className="flex items-center gap-2">
-                  <span className={dep.actif === false ? "text-[#8B8974] line-through" : ""}>{dep.nom}</span>
-                  {dep.actif === false && <Badge tone="default">Inactif</Badge>}
+                  <span className={item.actif === false ? "text-[#8B8974] line-through" : ""}>{item.nom}</span>
+                  {item.code && <Badge tone="accent">{item.code}</Badge>}
+                  {item.actif === false && <Badge tone="default">Inactif</Badge>}
                 </div>
                 <div className="flex items-center gap-2">
-                  <button onClick={() => { setEditingId(dep.id); setEditingNom(dep.nom); }} className="text-xs text-[#8B5E3C]">Renommer</button>
+                  <button onClick={() => { setEditingId(item.id); setEditingNom(item.nom); setEditingCode(item.code || ""); }} className="text-xs text-[#8B5E3C]">Modifier</button>
                   <button
-                    onClick={() => update((d) => { const x = d.departements.find((y) => y.id === dep.id); x.actif = x.actif === false ? true : false; })}
+                    onClick={() => update((d) => { const x = d[champ].find((y) => y.id === item.id); x.actif = x.actif === false ? true : false; })}
                     className="text-xs text-[#8B5E3C]"
-                  >{dep.actif === false ? "Activer" : "Désactiver"}</button>
-                  <button onClick={() => { if (confirm("Supprimer ce département ?")) update((d) => { d.departements = d.departements.filter((x) => x.id !== dep.id); }); }} className="text-[#C7C2A8] hover:text-[#A6402A]">
+                  >{item.actif === false ? "Activer" : "Désactiver"}</button>
+                  <button onClick={() => { if (confirm("Supprimer cet élément ?")) update((d) => { d[champ] = d[champ].filter((x) => x.id !== item.id); }); }} className="text-[#C7C2A8] hover:text-[#A6402A]">
                     <Trash2 size={14} />
                   </button>
                 </div>
@@ -625,7 +664,83 @@ function DepartementsSection({ data, update }) {
       </div>
 
       <div className="flex gap-2">
-        <Input value={nouveau} onChange={(e) => setNouveau(e.target.value)} placeholder="Nouveau département" className="flex-1" />
+        <Input value={nouveauNom} onChange={(e) => setNouveauNom(e.target.value)} placeholder="Nom" className="flex-1" />
+        <Input value={nouveauCode} onChange={(e) => setNouveauCode(e.target.value)} placeholder="Code" className="w-24" />
+        <Button variant="ghost" onClick={ajouter}><Plus size={14} /> Ajouter</Button>
+      </div>
+    </div>
+  );
+}
+
+function CategoriesDepensesSection({ data, update }) {
+  const [nouveauNom, setNouveauNom] = useState("");
+  const [nouveauCode, setNouveauCode] = useState("");
+  const [nouveauType, setNouveauType] = useState("variable");
+  const [editingId, setEditingId] = useState(null);
+  const [editingNom, setEditingNom] = useState("");
+  const [editingCode, setEditingCode] = useState("");
+
+  const ajouter = () => {
+    if (!nouveauNom.trim()) return;
+    update((d) => { d.categoriesDepenses.push({ id: uid(), nom: nouveauNom.trim(), code: nouveauCode.trim(), type: nouveauType, actif: true }); });
+    setNouveauNom("");
+    setNouveauCode("");
+  };
+
+  const sauverEdition = (id) => {
+    if (!editingNom.trim()) return;
+    update((d) => { const x = d.categoriesDepenses.find((y) => y.id === id); x.nom = editingNom.trim(); x.code = editingCode.trim(); });
+    setEditingId(null);
+  };
+
+  return (
+    <div className="border-t border-[#DFD8C2] pt-4">
+      <h4 className="text-sm font-medium mb-2 flex items-center gap-1.5"><Wallet size={14} /> Catégories de dépenses (codes analytiques)</h4>
+      <p className="text-xs text-[#8B8974] mb-3">Ces catégories, avec leur code analytique, sont proposées lors de la création d'une dépense dans Finances.</p>
+
+      {["variable", "fixe"].map((t) => (
+        <div key={t} className="mb-3">
+          <p className="text-xs font-medium text-[#5A5744] mb-1">{t === "variable" ? "Charges variables" : "Charges fixes"}</p>
+          <div className="space-y-2">
+            {data.categoriesDepenses.filter((c) => c.type === t).map((cat) => (
+              <div key={cat.id} className="flex items-center justify-between text-sm border border-[#DFD8C2] rounded-md px-3 py-2">
+                {editingId === cat.id ? (
+                  <div className="flex items-center gap-2 flex-1">
+                    <Input value={editingNom} onChange={(e) => setEditingNom(e.target.value)} className="flex-1" placeholder="Nom" />
+                    <Input value={editingCode} onChange={(e) => setEditingCode(e.target.value)} className="w-24" placeholder="Code" />
+                    <button onClick={() => sauverEdition(cat.id)} className="text-[#8B5E3C] text-xs">OK</button>
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex items-center gap-2">
+                      <span className={cat.actif === false ? "text-[#8B8974] line-through" : ""}>{cat.nom}</span>
+                      {cat.code && <Badge tone="accent">{cat.code}</Badge>}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button onClick={() => { setEditingId(cat.id); setEditingNom(cat.nom); setEditingCode(cat.code || ""); }} className="text-xs text-[#8B5E3C]">Modifier</button>
+                      <button
+                        onClick={() => update((d) => { const x = d.categoriesDepenses.find((y) => y.id === cat.id); x.actif = x.actif === false ? true : false; })}
+                        className="text-xs text-[#8B5E3C]"
+                      >{cat.actif === false ? "Activer" : "Désactiver"}</button>
+                      <button onClick={() => { if (confirm("Supprimer cette catégorie ?")) update((d) => { d.categoriesDepenses = d.categoriesDepenses.filter((x) => x.id !== cat.id); }); }} className="text-[#C7C2A8] hover:text-[#A6402A]">
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+
+      <div className="flex gap-2 flex-wrap">
+        <Input value={nouveauNom} onChange={(e) => setNouveauNom(e.target.value)} placeholder="Nom" className="flex-1" />
+        <Input value={nouveauCode} onChange={(e) => setNouveauCode(e.target.value)} placeholder="Code" className="w-20" />
+        <Select value={nouveauType} onChange={(e) => setNouveauType(e.target.value)} className="w-32">
+          <option value="variable">Variable</option>
+          <option value="fixe">Fixe</option>
+        </Select>
         <Button variant="ghost" onClick={ajouter}><Plus size={14} /> Ajouter</Button>
       </div>
     </div>
@@ -970,7 +1085,19 @@ function ParametresModal({ data, update, onClose }) {
 
         <GestionnairesSection data={data} update={update} />
 
-        <DepartementsSection data={data} update={update} />
+        <ListeAvecCodeSection
+          data={data} update={update} champ="departements" icon={Boxes}
+          titre="Départements"
+          description="Ces départements permettent de classer les productions et les postes du personnel (production animale, végétale, aquaculture, apiculture, transport, boutique intrant, autres...). Chaque département peut avoir un code analytique."
+        />
+
+        <ListeAvecCodeSection
+          data={data} update={update} champ="sectionsProduction" icon={Sprout}
+          titre="Sections de production (codes analytiques)"
+          description="Ces sections (maraîchage, pisciculture, apiculture...) sont proposées pour les techniciens de production dans Personnel, et peuvent servir de code analytique pour vos dépenses."
+        />
+
+        <CategoriesDepensesSection data={data} update={update} />
 
         <div className="border-t border-[#DFD8C2] pt-4">
           <h4 className="text-sm font-medium mb-2">Sauvegarde des données</h4>
@@ -1740,11 +1867,16 @@ function Finances({ data, update }) {
           {[...data.transactions].reverse().map((t) => {
             const compte = data.comptes.find((c) => c.id === t.compteId);
             const produit = data.produits.find((p) => p.id === t.produitId);
+            const departement = data.departements.find((d) => d.id === t.departementId);
+            const section = data.sectionsProduction.find((s) => s.id === t.sectionProductionId);
             return (
               <div key={t.id} className="p-3 flex items-center justify-between text-sm">
                 <div>
                   <p className="font-medium">{t.description || t.categorie}</p>
-                  <p className="text-xs text-[#8B8974]">{t.categorie} · {fmtDate(t.date)} · {compte ? `${COMPTE_LABELS[compte.type]} (${compte.nom})` : "Espèces"}{produit ? ` · ${produit.nom}` : ""}</p>
+                  <p className="text-xs text-[#8B8974]">
+                    {t.categorie}{t.codeCategorie ? ` (${t.codeCategorie})` : ""} · {fmtDate(t.date)} · {compte ? `${COMPTE_LABELS[compte.type]} (${compte.nom})` : "Espèces"}{produit ? ` · ${produit.nom}` : ""}
+                    {departement ? ` · ${departement.nom}` : ""}{section ? ` · ${section.nom}` : ""}
+                  </p>
                 </div>
                 <span className={t.type === "revenu" ? "text-[#3C5A34] font-medium" : "text-[#A6402A] font-medium"}>
                   {t.type === "revenu" ? "+" : "-"}{Number(t.montant).toLocaleString("fr-FR")}
@@ -1761,6 +1893,9 @@ function Finances({ data, update }) {
             comptes={data.comptes}
             produits={data.produits}
             employes={data.employes}
+            categoriesDepenses={data.categoriesDepenses}
+            departements={data.departements}
+            sectionsProduction={data.sectionsProduction}
             devise={data.ferme.devise}
             onSubmit={(vals) => {
               update((d) => d.transactions.push({ id: uid(), ...vals }));
@@ -1773,7 +1908,7 @@ function Finances({ data, update }) {
   );
 }
 
-function TransactionForm({ onSubmit, comptes = [], produits = [], employes = [], devise = "FCFA" }) {
+function TransactionForm({ onSubmit, comptes = [], produits = [], employes = [], categoriesDepenses = [], departements = [], sectionsProduction = [], devise = "FCFA" }) {
   const [type, setType] = useState("depense");
   const [categorie, setCategorie] = useState("");
   const [montant, setMontant] = useState("");
@@ -1784,8 +1919,26 @@ function TransactionForm({ onSubmit, comptes = [], produits = [], employes = [],
   const [quantite, setQuantite] = useState("");
   const [typeCharge, setTypeCharge] = useState("variable");
   const [employeId, setEmployeId] = useState("");
+  const [departementId, setDepartementId] = useState("");
+  const [sectionProductionId, setSectionProductionId] = useState("");
+
+  const categoriesDisponibles = categoriesDepenses.filter((c) => c.actif !== false && c.type === typeCharge);
+
+  const choisirCategorie = (nom) => {
+    setCategorie(nom);
+  };
+  const codeCategorie = categoriesDisponibles.find((c) => c.nom === categorie)?.code || "";
+
   return (
-    <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); if (!montant) return; onSubmit({ type, categorie, montant, date, description, compteId: compteId || null, produitId: produitId || null, quantite: quantite || null, typeCharge: type === "depense" ? typeCharge : null, employeId: employeId || null }); }}>
+    <form className="space-y-3" onSubmit={(e) => {
+      e.preventDefault(); if (!montant) return;
+      onSubmit({
+        type, categorie, montant, date, description, compteId: compteId || null, produitId: produitId || null,
+        quantite: quantite || null, typeCharge: type === "depense" ? typeCharge : null, employeId: employeId || null,
+        departementId: departementId || null, sectionProductionId: sectionProductionId || null,
+        codeCategorie: type === "depense" ? codeCategorie : "",
+      });
+    }}>
       <Field label="Type">
         <Select value={type} onChange={(e) => setType(e.target.value)}>
           <option value="depense">Dépense</option>
@@ -1795,21 +1948,22 @@ function TransactionForm({ onSubmit, comptes = [], produits = [], employes = [],
       <Field label="Catégorie">
         <Input
           value={categorie}
-          onChange={(e) => setCategorie(e.target.value)}
+          onChange={(e) => choisirCategorie(e.target.value)}
           placeholder="Ex. Vente lait, Achat semence"
-          list={type === "depense" && CHARGE_CATEGORIES[typeCharge] ? "charge-categories" : undefined}
+          list={type === "depense" && categoriesDisponibles.length > 0 ? "charge-categories" : undefined}
         />
-        {type === "depense" && CHARGE_CATEGORIES[typeCharge] && (
+        {type === "depense" && categoriesDisponibles.length > 0 && (
           <datalist id="charge-categories">
-            {CHARGE_CATEGORIES[typeCharge].map((c) => <option key={c} value={c} />)}
+            {categoriesDisponibles.map((c) => <option key={c.id} value={c.nom} />)}
           </datalist>
         )}
+        {codeCategorie && <p className="text-xs text-[#8B8974] mt-1">Code analytique : <span className="font-medium">{codeCategorie}</span></p>}
       </Field>
       <Field label={`Montant (${devise})`}><Input type="number" step="0.01" value={montant} onChange={(e) => setMontant(e.target.value)} required /></Field>
       <Field label="Date"><Input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></Field>
       {type === "depense" && (
         <Field label="Type de charge">
-          <Select value={typeCharge} onChange={(e) => setTypeCharge(e.target.value)}>
+          <Select value={typeCharge} onChange={(e) => { setTypeCharge(e.target.value); setCategorie(""); }}>
             <option value="variable">Charge variable (liée à l'exploitation : matière première, semences, alimentation...)</option>
             <option value="fixe">Charge fixe (indirecte : carburant, communication, repas, condiment, fournitures, bureautique, petits matériels...)</option>
             <option value="sociale">Charge sociale (cotisations)</option>
@@ -1823,6 +1977,22 @@ function TransactionForm({ onSubmit, comptes = [], produits = [], employes = [],
           <Select value={employeId} onChange={(e) => setEmployeId(e.target.value)}>
             <option value="">Aucun</option>
             {employes.map((emp) => <option key={emp.id} value={emp.id}>{emp.nom}</option>)}
+          </Select>
+        </Field>
+      )}
+      {type === "depense" && departements.length > 0 && (
+        <Field label="Département (code analytique)">
+          <Select value={departementId} onChange={(e) => setDepartementId(e.target.value)}>
+            <option value="">Non précisé</option>
+            {departements.filter((d) => d.actif !== false).map((d) => <option key={d.id} value={d.id}>{d.nom}{d.code ? ` (${d.code})` : ""}</option>)}
+          </Select>
+        </Field>
+      )}
+      {type === "depense" && sectionsProduction.length > 0 && (
+        <Field label="Section de production (code analytique)">
+          <Select value={sectionProductionId} onChange={(e) => setSectionProductionId(e.target.value)}>
+            <option value="">Non précisé</option>
+            {sectionsProduction.filter((s) => s.actif !== false).map((s) => <option key={s.id} value={s.id}>{s.nom}{s.code ? ` (${s.code})` : ""}</option>)}
           </Select>
         </Field>
       )}
@@ -2994,6 +3164,110 @@ function DocumentForm({ onSubmit, stocks = [], produits = [], tiersListe = [], d
 // ============================================================
 // RAPPORT MENSUEL (visuel)
 // ============================================================
+function GrandLivre({ data }) {
+  const [vue, setVue] = useState("categorie");
+  const [ouverts, setOuverts] = useState({});
+  const devise = data.ferme.devise;
+
+  const toggle = (cle) => setOuverts((o) => ({ ...o, [cle]: !o[cle] }));
+
+  const groupes = useMemo(() => {
+    const map = {};
+    const codeDe = {};
+    const cleDe = (t) => {
+      if (vue === "categorie") {
+        const cat = data.categoriesDepenses.find((c) => c.nom === t.categorie);
+        return { cle: t.categorie || "Non catégorisé", code: cat?.code || "" };
+      }
+      if (vue === "compte") {
+        if (!t.compteId) return { cle: "Espèces (non rattaché)", code: "" };
+        const c = data.comptes.find((x) => x.id === t.compteId);
+        return { cle: c ? `${COMPTE_LABELS[c.type]} — ${c.nom}` : "Compte supprimé", code: "" };
+      }
+      if (vue === "departement") {
+        const d = data.departements.find((x) => x.id === t.departementId);
+        return { cle: d ? d.nom : "Non précisé", code: d?.code || "" };
+      }
+      const s = data.sectionsProduction.find((x) => x.id === t.sectionProductionId);
+      return { cle: s ? s.nom : "Non précisé", code: s?.code || "" };
+    };
+    [...data.transactions].sort((a, b) => a.date.localeCompare(b.date)).forEach((t) => {
+      const { cle, code } = cleDe(t);
+      map[cle] = map[cle] || [];
+      map[cle].push(t);
+      if (code) codeDe[cle] = code;
+    });
+    return Object.entries(map)
+      .map(([cle, lignes]) => {
+        let solde = 0;
+        const lignesAvecSolde = lignes.map((t) => {
+          solde += t.type === "revenu" ? Number(t.montant || 0) : -Number(t.montant || 0);
+          return { ...t, soldeApres: solde };
+        });
+        const totalDebit = lignes.filter((t) => t.type === "depense").reduce((s, t) => s + Number(t.montant || 0), 0);
+        const totalCredit = lignes.filter((t) => t.type === "revenu").reduce((s, t) => s + Number(t.montant || 0), 0);
+        return { cle, code: codeDe[cle] || "", lignes: lignesAvecSolde, totalDebit, totalCredit, solde };
+      })
+      .sort((a, b) => a.cle.localeCompare(b.cle));
+  }, [data.transactions, data.comptes, data.categoriesDepenses, data.departements, data.sectionsProduction, vue]);
+
+  return (
+    <Card className="p-4">
+      <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
+        <h3 className="font-serif text-sm">Grand livre</h3>
+      </div>
+      <div className="flex gap-2 overflow-x-auto no-scrollbar mb-3">
+        {[
+          { id: "categorie", label: "Par catégorie" },
+          { id: "compte", label: "Par compte" },
+          { id: "departement", label: "Par département" },
+          { id: "section", label: "Par section" },
+        ].map((v) => (
+          <button
+            key={v.id}
+            onClick={() => setVue(v.id)}
+            className={`px-2.5 py-1 rounded-full text-xs whitespace-nowrap border ${vue === v.id ? "bg-[var(--color-primary)] text-white border-[var(--color-primary)]" : "bg-white text-[#5A5744] border-[#DFD8C2]"}`}
+          >{v.label}</button>
+        ))}
+      </div>
+      <p className="text-xs text-[#8B8974] mb-3">Liste chronologique de toutes les écritures, regroupées selon la vue choisie, avec code analytique et solde cumulé. Touchez un groupe pour voir le détail des écritures.</p>
+
+      <div className="divide-y divide-[#EFEAD9]">
+        {groupes.map((g) => (
+          <div key={g.cle} className="py-2">
+            <button onClick={() => toggle(g.cle)} className="w-full flex items-center justify-between text-sm">
+              <span className="font-medium flex items-center gap-1.5">
+                <ChevronRight size={14} className={`text-[#C7C2A8] transition-transform ${ouverts[g.cle] ? "rotate-90" : ""}`} />
+                {g.cle}
+                {g.code && <Badge tone="accent">{g.code}</Badge>}
+              </span>
+              <span className={`font-medium ${g.solde >= 0 ? "text-[#3C5A34]" : "text-[#A6402A]"}`}>{money(g.solde, devise)}</span>
+            </button>
+            {ouverts[g.cle] && (
+              <div className="mt-2 ml-5 space-y-1">
+                <div className="flex justify-between text-xs text-[#8B8974] pb-1 border-b border-[#EFEAD9]">
+                  <span>Total débit (sorties) : {money(g.totalDebit, devise)}</span>
+                  <span>Total crédit (entrées) : {money(g.totalCredit, devise)}</span>
+                </div>
+                {g.lignes.map((t) => (
+                  <div key={t.id} className="flex items-center justify-between text-xs py-0.5">
+                    <span className="text-[#8B8974] w-16 shrink-0">{fmtDate(t.date)}</span>
+                    <span className="flex-1 truncate px-2">{t.description || "—"}</span>
+                    <span className={`w-20 text-right shrink-0 ${t.type === "revenu" ? "text-[#3C5A34]" : "text-[#A6402A]"}`}>
+                      {t.type === "revenu" ? "+" : "-"}{money(t.montant, devise)}
+                    </span>
+                    <span className="w-24 text-right shrink-0 text-[#8B8974]">{money(t.soldeApres, devise)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
 function RapportMensuel({ data }) {
   const [mois, setMois] = useState(today().slice(0, 7)); // "YYYY-MM"
   const inMonth = (d) => d && d.slice(0, 7) === mois;
@@ -3247,6 +3521,8 @@ function RapportMensuel({ data }) {
           <p className="text-xs text-[#8B8974] mt-3">Résultat d'exploitation = total des produits d'exploitation − total des charges d'exploitation (y compris remboursements de prêts et amortissements, comptabilisés automatiquement).</p>
         </Card>
       )}
+
+      {data.transactions.length > 0 && <GrandLivre data={data} />}
 
       <div className="border-t border-[#DFD8C2] pt-6 space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-3">
@@ -4007,6 +4283,7 @@ function Personnel({ data, update }) {
         <Modal title="Nouvel employé" onClose={() => setShowAdd(false)}>
           <EmployeForm
             departements={data.departements}
+            sectionsProduction={data.sectionsProduction}
             onSubmit={(vals) => {
               update((d) => d.employes.push({ id: uid(), ...vals, conges: [], presences: [], evaluations: [], documentsPerso: [], bulletins: [] }));
               setShowAdd(false);
@@ -4018,7 +4295,7 @@ function Personnel({ data, update }) {
   );
 }
 
-function EmployeForm({ onSubmit, initial, departements = [] }) {
+function EmployeForm({ onSubmit, initial, departements = [], sectionsProduction = [] }) {
   const [nom, setNom] = useState(initial?.nom || "");
   const [poste, setPoste] = useState(initial?.poste || "");
   const [niveauHierarchique, setNiveauHierarchique] = useState(initial?.niveauHierarchique || HIERARCHIE_POSTES[0]);
@@ -4053,7 +4330,7 @@ function EmployeForm({ onSubmit, initial, departements = [] }) {
         <Field label="Unité / section de production">
           <Input list="sections-production" value={sectionProduction} onChange={(e) => setSectionProduction(e.target.value)} placeholder="Ex. Maraîchage, Pisciculture..." />
           <datalist id="sections-production">
-            {SECTIONS_PRODUCTION_SUGGESTIONS.map((s) => <option key={s} value={s} />)}
+            {sectionsProduction.filter((s) => s.actif !== false).map((s) => <option key={s.id} value={s.nom} />)}
           </datalist>
         </Field>
       )}
@@ -4304,6 +4581,7 @@ function EmployeDetail({ employe, data, update, onBack }) {
           <EmployeForm
             initial={employe}
             departements={data.departements}
+            sectionsProduction={data.sectionsProduction}
             onSubmit={(vals) => {
               update((d) => { const e = d.employes.find((x) => x.id === employe.id); Object.assign(e, vals); });
               setShowEdit(false);
