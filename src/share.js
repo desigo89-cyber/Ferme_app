@@ -42,3 +42,32 @@ export async function partagerSauvegarde(data, nomFichier) {
   URL.revokeObjectURL(url);
   return true;
 }
+
+// Partage d'un document (reçu, facture...) — ouvre la feuille de partage
+// native (l'utilisateur y choisit son application mail) avec le résumé du
+// document en texte, et la signature en pièce jointe si elle existe.
+export async function partagerDocument({ titre, texte, sujet, signatureDataUrl, nomFichierImage }) {
+  if (Capacitor.isNativePlatform()) {
+    const { Share } = await import("@capacitor/share");
+
+    if (signatureDataUrl) {
+      const { Filesystem, Directory } = await import("@capacitor/filesystem");
+      const base64 = signatureDataUrl.split(",")[1];
+      const written = await Filesystem.writeFile({
+        path: nomFichierImage || "signature.png",
+        data: base64,
+        directory: Directory.Cache,
+      });
+      await Share.share({ title: sujet || titre, text: texte, url: written.uri, dialogTitle: "Partager le document" });
+      return true;
+    }
+
+    await Share.share({ title: sujet || titre, text: texte, dialogTitle: "Partager le document" });
+    return true;
+  }
+
+  // Fallback web : ouvre le client mail par défaut avec le texte pré-rempli.
+  const mailto = `mailto:?subject=${encodeURIComponent(sujet || titre)}&body=${encodeURIComponent(texte)}`;
+  window.open(mailto, "_blank");
+  return true;
+}
