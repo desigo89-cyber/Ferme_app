@@ -4,14 +4,14 @@ import {
   Plus, X, Trash2, AlertTriangle, Calendar, ChevronRight, Heart, Baby, Milk,
   FileText, Landmark, Banknote, Smartphone, Lock, KeyRound, Eye, EyeOff, BarChart3, Package, TrendingUp, Settings,
   Users, Share2, Palette, Image as ImageIcon, Coins, CalendarOff, UserCircle, Building2,
-  PiggyBank, Percent, HandCoins
+  PiggyBank, Percent, HandCoins, Contact, Phone, Mail, PenTool, Send, Check, ClipboardList
 } from "lucide-react";
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
   PieChart, Pie, Cell, LineChart, Line
 } from "recharts";
 import { storage } from "./storage.js";
-import { partagerSauvegarde } from "./share.js";
+import { partagerSauvegarde, partagerDocument } from "./share.js";
 import * as sync from "./sync.js";
 
 // ---------- Design tokens ----------
@@ -42,6 +42,11 @@ const emptyState = {
   investissements: [],
   investisseurs: [],
   prets: [],
+  gestionnaires: [],
+  connexions: [],
+  tiers: [],
+  departements: [],
+  productions: [],
   security: { password: null },
 };
 
@@ -59,6 +64,35 @@ const COMPTE_LABELS = { banque: "Banque", caisse: "Caisse", mobile_money: "Mobil
 const DOC_LABELS = { recu: "Reçu", facture: "Facture", bordereau_reception: "Bordereau de réception", commande: "Commande" };
 
 const CONTRAT_LABELS = { cdi: "CDI", cdd: "CDD", stage: "Stage", essai: "Période d'essai", prestation: "Prestation" };
+
+const HIERARCHIE_POSTES = [
+  "Ouvrier",
+  "Agent de livraison",
+  "Poste de vente",
+  "Technicien de production",
+  "Responsable de département",
+  "Responsable de site",
+  "Gérant / Responsable de l'entreprise",
+  "Promoteur de l'entreprise",
+];
+const SECTIONS_PRODUCTION_SUGGESTIONS = [
+  "Maraîchage", "Culture céréalière", "Arboriculture", "Pondeuse", "Chair",
+  "Pisciculture", "Apiculture", "Transport", "Vente",
+];
+const COMPETENCES_SUGGESTIONS = [
+  "Agronome", "Comptable", "Chauffeur", "Ingénieur", "Gestionnaire", "Vétérinaire", "Commercial", "Technicien",
+];
+const DOC_PERSO_LABELS = { cv: "CV", attestation: "Attestation", contrat: "Contrat", piece_identite: "Pièce d'identité", diplome: "Diplôme", autre: "Autre" };
+
+const DEPARTEMENTS_DEFAUT = [
+  "Production animale",
+  "Production végétale",
+  "Aquaculture",
+  "Apiculture",
+  "Transport de produits agricoles",
+  "Boutique intrant agricole",
+  "Autres activités",
+];
 const CHARGE_LABELS = { variable: "Charge variable", fixe: "Charge fixe", sociale: "Charge sociale", salariale: "Salaire", autre: "Autre" };
 const CHARGE_CATEGORIES = {
   variable: ["Matière première", "Semences", "Alimentation animale", "Intrants agricoles", "Emballage"],
@@ -174,6 +208,7 @@ export default function FarmApp() {
   const [saveError, setSaveError] = useState(false);
   const [unlocked, setUnlocked] = useState(false);
   const [showSecurity, setShowSecurity] = useState(false);
+  const [currentGestionnaireId, setCurrentGestionnaireId] = useState(null);
 
   useEffect(() => {
     (async () => {
@@ -181,9 +216,15 @@ export default function FarmApp() {
         const res = await storage.get(STORAGE_KEY);
         if (res && res.value) {
           const parsed = JSON.parse(res.value);
-          setData({ ...emptyState, ...parsed });
-          setUnlocked(!parsed?.security?.password);
+          const merged = { ...emptyState, ...parsed };
+          if (!merged.departements || merged.departements.length === 0) {
+            merged.departements = DEPARTEMENTS_DEFAUT.map((nom) => ({ id: uid(), nom, actif: true }));
+          }
+          setData(merged);
+          const verrouille = !!parsed?.security?.password || (parsed?.gestionnaires || []).length > 0;
+          setUnlocked(!verrouille);
         } else {
+          setData({ ...emptyState, departements: DEPARTEMENTS_DEFAUT.map((nom) => ({ id: uid(), nom, actif: true })) });
           setUnlocked(true);
         }
       } catch (e) {
@@ -219,8 +260,10 @@ export default function FarmApp() {
     { id: "stocks", label: "Stocks", icon: Boxes },
     { id: "finances", label: "Finances", icon: Wallet },
     { id: "produits", label: "Produits", icon: Package },
+    { id: "production", label: "Circuit production", icon: ClipboardList },
     { id: "comptes", label: "Comptes", icon: Landmark },
     { id: "investissements", label: "Investissements", icon: PiggyBank },
+    { id: "contacts", label: "Fournisseurs & clients", icon: Contact },
     { id: "documents", label: "Documents", icon: FileText },
     { id: "rapport", label: "Rapport", icon: BarChart3 },
     { id: "personnel", label: "Personnel", icon: Users },
@@ -252,7 +295,14 @@ export default function FarmApp() {
       <LockScreen
         nomFerme={data.ferme.nom}
         password={data.security?.password}
-        onUnlock={() => setUnlocked(true)}
+        gestionnaires={data.gestionnaires}
+        onUnlock={(gestionnaireId) => {
+          if (gestionnaireId) {
+            update((d) => { d.connexions.push({ id: uid(), gestionnaireId, date: today(), heure: new Date().toISOString() }); });
+            setCurrentGestionnaireId(gestionnaireId);
+          }
+          setUnlocked(true);
+        }}
       />
     );
   }
@@ -264,7 +314,7 @@ export default function FarmApp() {
           <div className="flex items-center gap-3">
             {data.ferme.logo && <img src={data.ferme.logo} alt="Logo" className="h-9 w-9 rounded-full object-cover bg-white" />}
             <div>
-              <p className="text-[10px] uppercase tracking-widest text-[var(--color-nav)]">Gestion de ferme</p>
+              <p className="text-[10px] uppercase tracking-widest text-[var(--color-nav)]">SénèApp</p>
               <h1 className="font-serif text-xl sm:text-2xl">{data.ferme.nom}</h1>
             </div>
           </div>
@@ -317,8 +367,10 @@ export default function FarmApp() {
         {tab === "stocks" && <Stocks data={data} update={update} />}
         {tab === "finances" && <Finances data={data} update={update} />}
         {tab === "produits" && <Produits data={data} update={update} />}
+        {tab === "production" && <ProductionCircuit data={data} update={update} />}
         {tab === "comptes" && <Comptes data={data} update={update} />}
         {tab === "investissements" && <Investissements data={data} update={update} />}
+        {tab === "contacts" && <Contacts data={data} update={update} />}
         {tab === "documents" && <Documents data={data} update={update} />}
         {tab === "rapport" && <RapportMensuel data={data} />}
         {tab === "personnel" && <Personnel data={data} update={update} />}
@@ -331,19 +383,59 @@ export default function FarmApp() {
 // ============================================================
 // SÉCURITÉ (verrouillage par mot de passe)
 // ============================================================
-function LockScreen({ nomFerme, password, onUnlock }) {
+function LockScreen({ nomFerme, password, gestionnaires = [], onUnlock }) {
+  const gestionnairesActifs = gestionnaires.filter((g) => g.actif !== false);
+  const modeMultiUtilisateurs = gestionnairesActifs.length > 0;
+  const [selectedGestionnaire, setSelectedGestionnaire] = useState(null);
   const [value, setValue] = useState("");
   const [error, setError] = useState(false);
   const [show, setShow] = useState(false);
 
-  const submit = (e) => {
+  const submitPassword = (e) => {
     e.preventDefault();
     if (value === password) {
-      onUnlock();
+      onUnlock(null);
     } else {
       setError(true);
     }
   };
+
+  const submitCode = (e) => {
+    e.preventDefault();
+    if (selectedGestionnaire && value === selectedGestionnaire.code) {
+      onUnlock(selectedGestionnaire.id);
+    } else {
+      setError(true);
+    }
+  };
+
+  if (modeMultiUtilisateurs && !selectedGestionnaire) {
+    return (
+      <div className="min-h-screen bg-[#2F3B2C] flex items-center justify-center p-4">
+        <Card className="p-6 w-full max-w-sm">
+          <div className="flex flex-col items-center text-center mb-4">
+            <div className="h-10 w-10 rounded-full bg-[#EFEAD9] flex items-center justify-center mb-3">
+              <UserCircle size={18} className="text-[#2F3B2C]" />
+            </div>
+            <h2 className="font-serif text-lg">{nomFerme}</h2>
+            <p className="text-xs text-[#8B8974] mt-1">Qui êtes-vous ?</p>
+          </div>
+          <div className="space-y-2">
+            {gestionnairesActifs.map((g) => (
+              <button
+                key={g.id}
+                onClick={() => { setSelectedGestionnaire(g); setValue(""); setError(false); }}
+                className="w-full text-left px-3.5 py-2.5 rounded-md border border-[#DFD8C2] hover:bg-[#E9E3CF] flex items-center gap-2"
+              >
+                <UserCircle size={16} className="text-[#8B5E3C]" />
+                <span className="text-sm">{g.nom}</span>
+              </button>
+            ))}
+          </div>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#2F3B2C] flex items-center justify-center p-4">
@@ -352,26 +444,190 @@ function LockScreen({ nomFerme, password, onUnlock }) {
           <div className="h-10 w-10 rounded-full bg-[#EFEAD9] flex items-center justify-center mb-3">
             <Lock size={18} className="text-[#2F3B2C]" />
           </div>
-          <h2 className="font-serif text-lg">{nomFerme}</h2>
-          <p className="text-xs text-[#8B8974] mt-1">Entrez le mot de passe pour continuer</p>
+          <h2 className="font-serif text-lg">{modeMultiUtilisateurs ? selectedGestionnaire.nom : nomFerme}</h2>
+          <p className="text-xs text-[#8B8974] mt-1">{modeMultiUtilisateurs ? "Entrez votre code d'entrée" : "Entrez le mot de passe pour continuer"}</p>
         </div>
-        <form onSubmit={submit} className="space-y-3">
+        <form onSubmit={modeMultiUtilisateurs ? submitCode : submitPassword} className="space-y-3">
           <div className="relative">
             <Input
               type={show ? "text" : "password"}
               value={value}
               onChange={(e) => { setValue(e.target.value); setError(false); }}
-              placeholder="Mot de passe"
+              placeholder={modeMultiUtilisateurs ? "Code" : "Mot de passe"}
               autoFocus
             />
             <button type="button" onClick={() => setShow((s) => !s)} className="absolute right-2 top-1/2 -translate-y-1/2 text-[#8B8974]">
               {show ? <EyeOff size={16} /> : <Eye size={16} />}
             </button>
           </div>
-          {error && <p className="text-xs text-[#A6402A]">Mot de passe incorrect.</p>}
+          {error && <p className="text-xs text-[#A6402A]">{modeMultiUtilisateurs ? "Code incorrect." : "Mot de passe incorrect."}</p>}
           <Button type="submit" variant="accent" className="w-full">Déverrouiller</Button>
+          {modeMultiUtilisateurs && (
+            <button type="button" onClick={() => { setSelectedGestionnaire(null); setValue(""); setError(false); }} className="w-full text-xs text-[#8B8974] hover:text-[#232620]">
+              ← Ce n'est pas moi
+            </button>
+          )}
         </form>
       </Card>
+    </div>
+  );
+}
+
+function GestionnairesSection({ data, update }) {
+  const [showAdd, setShowAdd] = useState(false);
+  const [showJournal, setShowJournal] = useState(false);
+
+  const journalParJour = useMemo(() => {
+    const map = {};
+    (data.connexions || []).forEach((c) => {
+      map[c.date] = map[c.date] || [];
+      const g = data.gestionnaires.find((x) => x.id === c.gestionnaireId);
+      map[c.date].push({ nom: g ? g.nom : "Gestionnaire supprimé", heure: c.heure });
+    });
+    return Object.entries(map).sort((a, b) => b[0].localeCompare(a[0]));
+  }, [data.connexions, data.gestionnaires]);
+
+  return (
+    <div className="border-t border-[#DFD8C2] pt-4">
+      <h4 className="text-sm font-medium mb-2 flex items-center gap-1.5"><Users size={14} /> Gestionnaires (multi-utilisateurs)</h4>
+      <p className="text-xs text-[#8B8974] mb-3">Ajoutez un gestionnaire par personne qui utilise l'application, chacun avec son propre code d'entrée. Dès qu'au moins un gestionnaire est ajouté, l'écran de déverrouillage demande de choisir son nom puis son code, à la place du mot de passe unique.</p>
+
+      {data.gestionnaires.length === 0 ? (
+        <p className="text-xs text-[#8B8974] mb-3">Aucun gestionnaire enregistré pour le moment.</p>
+      ) : (
+        <div className="space-y-2 mb-3">
+          {data.gestionnaires.map((g) => (
+            <div key={g.id} className="flex items-center justify-between text-sm border border-[#DFD8C2] rounded-md px-3 py-2">
+              <div className="flex items-center gap-2">
+                <UserCircle size={16} className="text-[#8B5E3C]" />
+                <span>{g.nom}</span>
+                {g.actif === false && <Badge tone="default">Inactif</Badge>}
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => update((d) => { const x = d.gestionnaires.find((y) => y.id === g.id); x.actif = x.actif === false ? true : false; })}
+                  className="text-xs text-[#8B5E3C]"
+                >{g.actif === false ? "Activer" : "Désactiver"}</button>
+                <button onClick={() => { if (confirm("Supprimer ce gestionnaire ?")) update((d) => { d.gestionnaires = d.gestionnaires.filter((x) => x.id !== g.id); }); }} className="text-[#C7C2A8] hover:text-[#A6402A]">
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="flex gap-2 flex-wrap">
+        <Button variant="ghost" onClick={() => setShowAdd(true)}><Plus size={14} /> Ajouter un gestionnaire</Button>
+        {data.connexions.length > 0 && <Button variant="ghost" onClick={() => setShowJournal(true)}><CalendarOff size={14} /> Journal des connexions</Button>}
+      </div>
+
+      {showAdd && (
+        <Modal title="Nouveau gestionnaire" onClose={() => setShowAdd(false)}>
+          <GestionnaireForm
+            onSubmit={(vals) => {
+              update((d) => d.gestionnaires.push({ id: uid(), ...vals, actif: true }));
+              setShowAdd(false);
+            }}
+          />
+        </Modal>
+      )}
+
+      {showJournal && (
+        <Modal title="Journal des gestionnaires par jour" onClose={() => setShowJournal(false)}>
+          <div className="space-y-3 max-h-96 overflow-y-auto">
+            {journalParJour.length === 0 ? (
+              <p className="text-sm text-[#8B8974]">Aucune connexion enregistrée.</p>
+            ) : (
+              journalParJour.map(([date, entries]) => (
+                <div key={date} className="border-b border-[#EFEAD9] pb-2">
+                  <p className="text-xs font-medium text-[#5A5744]">{fmtDate(date)}</p>
+                  <ul className="mt-1 space-y-0.5">
+                    {entries.map((e, i) => (
+                      <li key={i} className="text-sm flex justify-between">
+                        <span>{e.nom}</span>
+                        <span className="text-xs text-[#8B8974]">{new Date(e.heure).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))
+            )}
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+function GestionnaireForm({ onSubmit }) {
+  const [nom, setNom] = useState("");
+  const [code, setCode] = useState("");
+  return (
+    <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); if (!nom || !code) return; onSubmit({ nom, code }); }}>
+      <Field label="Nom du gestionnaire"><Input value={nom} onChange={(e) => setNom(e.target.value)} /></Field>
+      <Field label="Code d'entrée"><Input type="text" value={code} onChange={(e) => setCode(e.target.value)} placeholder="Ex. 1234" /></Field>
+      <Button type="submit" variant="accent" className="w-full">Enregistrer</Button>
+    </form>
+  );
+}
+
+function DepartementsSection({ data, update }) {
+  const [nouveau, setNouveau] = useState("");
+  const [editingId, setEditingId] = useState(null);
+  const [editingNom, setEditingNom] = useState("");
+
+  const ajouter = () => {
+    if (!nouveau.trim()) return;
+    update((d) => { d.departements.push({ id: uid(), nom: nouveau.trim(), actif: true }); });
+    setNouveau("");
+  };
+
+  const sauverEdition = (id) => {
+    if (!editingNom.trim()) return;
+    update((d) => { const dep = d.departements.find((x) => x.id === id); dep.nom = editingNom.trim(); });
+    setEditingId(null);
+  };
+
+  return (
+    <div className="border-t border-[#DFD8C2] pt-4">
+      <h4 className="text-sm font-medium mb-2 flex items-center gap-1.5"><Boxes size={14} /> Départements</h4>
+      <p className="text-xs text-[#8B8974] mb-3">Ces départements permettent de classer les productions et les postes du personnel (production animale, végétale, aquaculture, apiculture, transport, boutique intrant, autres...). Vous pouvez renommer, désactiver ou ajouter les vôtres.</p>
+
+      <div className="space-y-2 mb-3">
+        {data.departements.map((dep) => (
+          <div key={dep.id} className="flex items-center justify-between text-sm border border-[#DFD8C2] rounded-md px-3 py-2">
+            {editingId === dep.id ? (
+              <div className="flex items-center gap-2 flex-1">
+                <Input value={editingNom} onChange={(e) => setEditingNom(e.target.value)} className="flex-1" />
+                <button onClick={() => sauverEdition(dep.id)} className="text-[#8B5E3C] text-xs">OK</button>
+              </div>
+            ) : (
+              <>
+                <div className="flex items-center gap-2">
+                  <span className={dep.actif === false ? "text-[#8B8974] line-through" : ""}>{dep.nom}</span>
+                  {dep.actif === false && <Badge tone="default">Inactif</Badge>}
+                </div>
+                <div className="flex items-center gap-2">
+                  <button onClick={() => { setEditingId(dep.id); setEditingNom(dep.nom); }} className="text-xs text-[#8B5E3C]">Renommer</button>
+                  <button
+                    onClick={() => update((d) => { const x = d.departements.find((y) => y.id === dep.id); x.actif = x.actif === false ? true : false; })}
+                    className="text-xs text-[#8B5E3C]"
+                  >{dep.actif === false ? "Activer" : "Désactiver"}</button>
+                  <button onClick={() => { if (confirm("Supprimer ce département ?")) update((d) => { d.departements = d.departements.filter((x) => x.id !== dep.id); }); }} className="text-[#C7C2A8] hover:text-[#A6402A]">
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        ))}
+      </div>
+
+      <div className="flex gap-2">
+        <Input value={nouveau} onChange={(e) => setNouveau(e.target.value)} placeholder="Nouveau département" className="flex-1" />
+        <Button variant="ghost" onClick={ajouter}><Plus size={14} /> Ajouter</Button>
+      </div>
     </div>
   );
 }
@@ -709,7 +965,12 @@ function ParametresModal({ data, update, onClose }) {
             <Button type="submit" variant="accent" className="w-full">{hasPassword ? "Mettre à jour" : "Activer le verrouillage"}</Button>
             {hasPassword && <Button type="button" variant="danger" className="w-full" onClick={removePassword}>Désactiver le verrouillage</Button>}
           </form>
+          <p className="text-xs text-[#8B8974] mt-2">Le mot de passe unique n'est utilisé que si aucun gestionnaire n'est défini ci-dessous.</p>
         </div>
+
+        <GestionnairesSection data={data} update={update} />
+
+        <DepartementsSection data={data} update={update} />
 
         <div className="border-t border-[#DFD8C2] pt-4">
           <h4 className="text-sm font-medium mb-2">Sauvegarde des données</h4>
@@ -1746,6 +2007,62 @@ function calculPret(pret) {
   };
 }
 
+// ---------- Bulletin de paie (Mali) ----------
+// Taux INPS/AMO et barème ITS conformes au Code Général des Impôts du Mali (dgi.gouv.ml/CGI/), vérifiés en ligne.
+const INPS_TAUX_SALARIAL = 0.036; // retraite — part salariale
+const INPS_TAUX_PATRONAL = 0.054; // retraite — part patronale
+const AMO_TAUX_SALARIAL = 0.0306; // assurance maladie obligatoire — part salariale
+const AMO_TAUX_PATRONAL = 0.035; // assurance maladie obligatoire — part patronale
+const ANPE_TAUX_PATRONAL = 0.01; // taxe emploi (patronale uniquement)
+const TAUX_AUTRES_CHARGES_PATRONALES_DEFAUT = 10.5; // prestations familiales, accidents du travail (1-4%, variable selon secteur), formation... — estimation ajustable
+
+const BAREME_ITS_ANNUEL = [
+  { min: 0, max: 330000, taux: 0 },
+  { min: 330000, max: 578400, taux: 0.05 },
+  { min: 578400, max: 1176400, taux: 0.12 },
+  { min: 1176400, max: 1789733, taux: 0.18 },
+  { min: 1789733, max: 2384195, taux: 0.26 },
+  { min: 2384195, max: 3494130, taux: 0.31 },
+  { min: 3494130, max: Infinity, taux: 0.37 },
+];
+
+function calculITSAnnuel(baseAnnuelle) {
+  let its = 0;
+  for (const tr of BAREME_ITS_ANNUEL) {
+    if (baseAnnuelle > tr.min) {
+      its += (Math.min(baseAnnuelle, tr.max) - tr.min) * tr.taux;
+    }
+  }
+  return its;
+}
+
+function calculBulletinPaie({ brut, primes = 0, situationFamiliale = "celibataire", nombreEnfants = 0, tauxAutresChargesPatronales = TAUX_AUTRES_CHARGES_PATRONALES_DEFAUT }) {
+  const brutTotal = Number(brut || 0) + Number(primes || 0);
+  const inpsSalarial = brutTotal * INPS_TAUX_SALARIAL;
+  const amoSalarial = brutTotal * AMO_TAUX_SALARIAL;
+  const baseImposableMensuelle = Math.max(brutTotal - inpsSalarial - amoSalarial, 0);
+  const baseImposableAnnuelle = baseImposableMensuelle * 12;
+  const itsBrutAnnuel = calculITSAnnuel(baseImposableAnnuelle);
+  const tauxReduction = (situationFamiliale === "marie" ? 0.10 : 0) + Math.min(Number(nombreEnfants || 0), 10) * 0.025;
+  const itsNetAnnuel = itsBrutAnnuel * (1 - tauxReduction);
+  const its = itsNetAnnuel / 12;
+  const totalRetenues = inpsSalarial + amoSalarial + its;
+  const net = brutTotal - totalRetenues;
+
+  const inpsPatronal = brutTotal * INPS_TAUX_PATRONAL;
+  const amoPatronal = brutTotal * AMO_TAUX_PATRONAL;
+  const anpePatronal = brutTotal * ANPE_TAUX_PATRONAL;
+  const autresChargesPatronales = brutTotal * (Number(tauxAutresChargesPatronales || 0) / 100);
+  const totalChargesPatronales = inpsPatronal + amoPatronal + anpePatronal + autresChargesPatronales;
+  const coutTotalEmployeur = brutTotal + totalChargesPatronales;
+
+  return {
+    brutTotal, inpsSalarial, amoSalarial, baseImposableMensuelle, its, totalRetenues, net,
+    inpsPatronal, amoPatronal, anpePatronal, autresChargesPatronales, totalChargesPatronales, coutTotalEmployeur,
+    tauxReduction,
+  };
+}
+
 function Investissements({ data, update }) {
   const [subTab, setSubTab] = useState("investissements");
   const [showAddInv, setShowAddInv] = useState(false);
@@ -2049,6 +2366,141 @@ function PretForm({ onSubmit, devise = "FCFA" }) {
   );
 }
 
+// ---------- Fournisseurs & clients ----------
+const TIERS_TYPE_LABELS = { fournisseur: "Fournisseur", client: "Client", les_deux: "Fournisseur & client" };
+
+function Contacts({ data, update }) {
+  const [showAdd, setShowAdd] = useState(false);
+  const [editing, setEditing] = useState(null);
+  const [filter, setFilter] = useState("tous");
+
+  const filtered = data.tiers.filter((t) => filter === "tous" || t.type === filter || (filter !== "tous" && t.type === "les_deux"));
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <h2 className="font-serif text-xl">Fournisseurs & clients</h2>
+        <Button variant="accent" onClick={() => setShowAdd(true)}><Plus size={16} /> Nouveau contact</Button>
+      </div>
+
+      <div className="flex gap-2 overflow-x-auto no-scrollbar">
+        {["tous", "fournisseur", "client"].map((f) => (
+          <button
+            key={f}
+            onClick={() => setFilter(f)}
+            className={`px-3 py-1.5 rounded-full text-xs whitespace-nowrap border ${filter === f ? "bg-[var(--color-primary)] text-white border-[var(--color-primary)]" : "bg-white text-[#5A5744] border-[#DFD8C2]"}`}
+          >
+            {f === "tous" ? "Tous" : f === "fournisseur" ? "Fournisseurs" : "Clients"}
+          </button>
+        ))}
+      </div>
+
+      {filtered.length === 0 ? (
+        <EmptyState icon={Contact} text="Aucun contact enregistré (fournisseur ou client)." action={<Button variant="ghost" onClick={() => setShowAdd(true)}>Ajouter un contact</Button>} />
+      ) : (
+        <div className="grid sm:grid-cols-2 gap-3">
+          {filtered.map((t) => (
+            <Card key={t.id} className="p-4">
+              <div className="flex items-start justify-between">
+                <div>
+                  <h3 className="font-medium">{t.nom}</h3>
+                  <Badge tone="accent">{TIERS_TYPE_LABELS[t.type] || t.type}</Badge>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button onClick={() => setEditing(t.id)} className="text-[#8B5E3C] text-xs">Modifier</button>
+                  <button onClick={() => { if (confirm("Supprimer ce contact ?")) update((d) => { d.tiers = d.tiers.filter((x) => x.id !== t.id); }); }} className="text-[#C7C2A8] hover:text-[#A6402A]">
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              </div>
+              <div className="mt-3 space-y-1 text-sm">
+                {t.telephone && <p className="flex items-center gap-1.5 text-[#8B8974]"><Phone size={12} /> {t.telephone}</p>}
+                {t.email && <p className="flex items-center gap-1.5 text-[#8B8974]"><Mail size={12} /> {t.email}</p>}
+                {t.adresse && <p className="text-[#8B8974]">{t.adresse}</p>}
+              </div>
+              {t.produits && t.produits.length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-1">
+                  {t.produits.map((p) => <Badge key={p} tone="default">{p}</Badge>)}
+                </div>
+              )}
+              {t.notes && <p className="text-xs text-[#8B8974] mt-2 italic">{t.notes}</p>}
+            </Card>
+          ))}
+        </div>
+      )}
+
+      {showAdd && (
+        <Modal title="Nouveau contact" onClose={() => setShowAdd(false)}>
+          <ContactForm produits={data.produits} onSubmit={(vals) => { update((d) => d.tiers.push({ id: uid(), ...vals })); setShowAdd(false); }} />
+        </Modal>
+      )}
+
+      {editing && (
+        <Modal title="Modifier le contact" onClose={() => setEditing(null)}>
+          <ContactForm
+            produits={data.produits}
+            initial={data.tiers.find((t) => t.id === editing)}
+            onSubmit={(vals) => {
+              update((d) => { const t = d.tiers.find((x) => x.id === editing); Object.assign(t, vals); });
+              setEditing(null);
+            }}
+          />
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+function ContactForm({ onSubmit, initial, produits = [] }) {
+  const [nom, setNom] = useState(initial?.nom || "");
+  const [type, setType] = useState(initial?.type || "fournisseur");
+  const [telephone, setTelephone] = useState(initial?.telephone || "");
+  const [email, setEmail] = useState(initial?.email || "");
+  const [adresse, setAdresse] = useState(initial?.adresse || "");
+  const [produitsSelect, setProduitsSelect] = useState(initial?.produits || []);
+  const [notes, setNotes] = useState(initial?.notes || "");
+
+  const toggleProduit = (nomProduit) => {
+    setProduitsSelect((ls) => ls.includes(nomProduit) ? ls.filter((p) => p !== nomProduit) : [...ls, nomProduit]);
+  };
+
+  return (
+    <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); if (!nom) return; onSubmit({ nom, type, telephone, email, adresse, produits: produitsSelect, notes }); }}>
+      <Field label="Nom">
+        <Input value={nom} onChange={(e) => setNom(e.target.value)} placeholder="Ex. Coopérative Sikasso" />
+      </Field>
+      <Field label="Type">
+        <Select value={type} onChange={(e) => setType(e.target.value)}>
+          <option value="fournisseur">Fournisseur</option>
+          <option value="client">Client</option>
+          <option value="les_deux">Fournisseur & client</option>
+        </Select>
+      </Field>
+      <Field label="Téléphone"><Input value={telephone} onChange={(e) => setTelephone(e.target.value)} /></Field>
+      <Field label="Email"><Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} /></Field>
+      <Field label="Adresse"><Input value={adresse} onChange={(e) => setAdresse(e.target.value)} /></Field>
+      {produits.length > 0 && (
+        <Field label="Produits associés">
+          <div className="flex flex-wrap gap-1.5">
+            {produits.map((p) => (
+              <button
+                type="button"
+                key={p.id}
+                onClick={() => toggleProduit(p.nom)}
+                className={`px-2.5 py-1 rounded-full text-xs border ${produitsSelect.includes(p.nom) ? "bg-[var(--color-accent)] text-white border-[var(--color-accent)]" : "bg-white text-[#5A5744] border-[#DFD8C2]"}`}
+              >
+                {p.nom}
+              </button>
+            ))}
+          </div>
+        </Field>
+      )}
+      <Field label="Notes (optionnel)"><TextArea value={notes} onChange={(e) => setNotes(e.target.value)} /></Field>
+      <Button type="submit" variant="accent" className="w-full">Enregistrer</Button>
+    </form>
+  );
+}
+
 function Comptes({ data, update }) {
   const [showAdd, setShowAdd] = useState(false);
   const [selected, setSelected] = useState(null);
@@ -2150,11 +2602,49 @@ function CompteForm({ onSubmit }) {
 // ============================================================
 // DOCUMENTS (reçu, facture, bordereau de réception, commande)
 // ============================================================
+function texteDocument(doc, data) {
+  const lignes = [
+    `${DOC_LABELS[doc.type]}${doc.numero ? ` N° ${doc.numero}` : ""}`,
+    `Date : ${fmtDate(doc.date)}`,
+    `${data.ferme.nom}`,
+    doc.tiers ? `Tiers : ${doc.tiers}` : "",
+    "",
+  ];
+  if (doc.lignes && doc.lignes.length > 0) {
+    doc.lignes.forEach((l) => lignes.push(`- ${l.produit || "?"} : ${l.quantite} ${l.unite || ""} × ${money(l.prixUnitaire, data.ferme.devise)}`));
+    lignes.push("");
+  }
+  if (doc.montant) lignes.push(`Montant : ${money(doc.montant, data.ferme.devise)}`);
+  lignes.push(`Statut : ${{ en_attente: "En attente", valide: "Validé", paye: "Payé" }[doc.statut] || doc.statut}`);
+  if (doc.notes) lignes.push("", `Notes : ${doc.notes}`);
+  if (doc.signataire) lignes.push("", `Signé par ${doc.signataire} le ${fmtDate(doc.dateSignature)}`);
+  return lignes.filter(Boolean).join("\n");
+}
+
 function Documents({ data, update }) {
   const [showAdd, setShowAdd] = useState(false);
   const [filter, setFilter] = useState("tous");
+  const [selected, setSelected] = useState(null);
+  const [showSignature, setShowSignature] = useState(false);
+  const [shareError, setShareError] = useState("");
 
   const filtered = filter === "tous" ? data.documents : data.documents.filter((d) => d.type === filter);
+  const doc = data.documents.find((d) => d.id === selected);
+
+  const partager = async (d) => {
+    setShareError("");
+    try {
+      await partagerDocument({
+        titre: `${DOC_LABELS[d.type]} — ${data.ferme.nom}`,
+        sujet: `${DOC_LABELS[d.type]}${d.numero ? ` N° ${d.numero}` : ""} — ${data.ferme.nom}`,
+        texte: texteDocument(d, data),
+        signatureDataUrl: d.signature || null,
+        nomFichierImage: `signature-${d.numero || d.id}.png`,
+      });
+    } catch (err) {
+      setShareError("Le partage a échoué. Réessayez.");
+    }
+  };
 
   return (
     <div className="space-y-4">
@@ -2179,36 +2669,35 @@ function Documents({ data, update }) {
         <EmptyState icon={FileText} text="Aucun document enregistré." action={<Button variant="ghost" onClick={() => setShowAdd(true)}>Ajouter un document</Button>} />
       ) : (
         <Card className="divide-y divide-[#EFEAD9]">
-          {[...filtered].reverse().map((doc) => (
-            <div key={doc.id} className="p-3 flex items-center justify-between text-sm gap-3">
+          {[...filtered].reverse().map((d) => (
+            <div key={d.id} className="p-3 flex items-center justify-between text-sm gap-3 cursor-pointer hover:bg-[#FBF9F2]" onClick={() => setSelected(d.id)}>
               <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                  <Badge tone="accent">{DOC_LABELS[doc.type]}</Badge>
-                  {doc.numero && <span className="text-xs text-[#8B8974]">N° {doc.numero}</span>}
+                <div className="flex items-center gap-2 flex-wrap">
+                  <Badge tone="accent">{DOC_LABELS[d.type]}</Badge>
+                  {d.numero && <span className="text-xs text-[#8B8974]">N° {d.numero}</span>}
+                  {d.signature && <Badge tone="good"><Check size={10} className="inline -mt-0.5" /> Signé</Badge>}
                 </div>
-                <p className="font-medium truncate mt-0.5">{doc.tiers || "Tiers non précisé"}</p>
-                <p className="text-xs text-[#8B8974]">{fmtDate(doc.date)}</p>
-                {doc.stockId && (
+                <p className="font-medium truncate mt-0.5">{d.tiers || "Tiers non précisé"}</p>
+                <p className="text-xs text-[#8B8974]">{fmtDate(d.date)}</p>
+                {d.stockId && (
                   <p className="text-xs text-[#8B5E14] mt-0.5">
-                    + {doc.quantiteRecue} {data.stocks.find((s) => s.id === doc.stockId)?.unite} → {data.stocks.find((s) => s.id === doc.stockId)?.nom}
+                    + {d.quantiteRecue} {data.stocks.find((s) => s.id === d.stockId)?.unite} → {data.stocks.find((s) => s.id === d.stockId)?.nom}
                   </p>
                 )}
-                {doc.lignes && doc.lignes.length > 0 && (
+                {d.lignes && d.lignes.length > 0 && (
                   <ul className="mt-1 text-xs text-[#8B8974] space-y-0.5">
-                    {doc.lignes.map((l) => (
+                    {d.lignes.map((l) => (
                       <li key={l.id}>{l.produit || "?"} — {l.quantite} {l.unite || ""} × {money(l.prixUnitaire, data.ferme.devise)}</li>
                     ))}
                   </ul>
                 )}
               </div>
               <div className="flex items-center gap-3 shrink-0">
-                {doc.montant && <span className="font-medium">{money(doc.montant, data.ferme.devise)}</span>}
-                <Badge tone={doc.statut === "paye" ? "good" : doc.statut === "valide" ? "accent" : "default"}>
-                  {{ en_attente: "En attente", valide: "Validé", paye: "Payé" }[doc.statut] || doc.statut}
+                {d.montant && <span className="font-medium">{money(d.montant, data.ferme.devise)}</span>}
+                <Badge tone={d.statut === "paye" ? "good" : d.statut === "valide" ? "accent" : "default"}>
+                  {{ en_attente: "En attente", valide: "Validé", paye: "Payé" }[d.statut] || d.statut}
                 </Badge>
-                <button onClick={() => update((d) => { d.documents = d.documents.filter((x) => x.id !== doc.id); })} className="text-[#C7C2A8] hover:text-[#A6402A]">
-                  <Trash2 size={14} />
-                </button>
+                <ChevronRight size={16} className="text-[#C7C2A8]" />
               </div>
             </div>
           ))}
@@ -2220,6 +2709,7 @@ function Documents({ data, update }) {
           <DocumentForm
             stocks={data.stocks}
             produits={data.produits}
+            tiersListe={data.tiers}
             devise={data.ferme.devise}
             onSubmit={(vals) => {
               update((d) => {
@@ -2235,11 +2725,157 @@ function Documents({ data, update }) {
           />
         </Modal>
       )}
+
+      {doc && (
+        <Modal title={`${DOC_LABELS[doc.type]}${doc.numero ? ` — N° ${doc.numero}` : ""}`} onClose={() => setSelected(null)}>
+          <div className="space-y-3 text-sm">
+            <div className="flex justify-between"><span className="text-[#8B8974]">Tiers</span><span className="font-medium">{doc.tiers || "—"}</span></div>
+            <div className="flex justify-between"><span className="text-[#8B8974]">Date</span><span>{fmtDate(doc.date)}</span></div>
+            {doc.lignes && doc.lignes.length > 0 && (
+              <div className="border-t border-[#EFEAD9] pt-2">
+                {doc.lignes.map((l) => (
+                  <div key={l.id} className="flex justify-between text-xs py-0.5">
+                    <span>{l.produit || "?"} — {l.quantite} {l.unite || ""}</span>
+                    <span>{money(Number(l.quantite || 0) * Number(l.prixUnitaire || 0), data.ferme.devise)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="flex justify-between font-medium border-t border-[#EFEAD9] pt-2"><span>Montant</span><span>{money(doc.montant, data.ferme.devise)}</span></div>
+            <div className="flex justify-between"><span className="text-[#8B8974]">Statut</span>
+              <Badge tone={doc.statut === "paye" ? "good" : doc.statut === "valide" ? "accent" : "default"}>
+                {{ en_attente: "En attente", valide: "Validé", paye: "Payé" }[doc.statut] || doc.statut}
+              </Badge>
+            </div>
+            {doc.notes && <p className="text-xs text-[#8B8974] border-t border-[#EFEAD9] pt-2">{doc.notes}</p>}
+
+            <div className="border-t border-[#EFEAD9] pt-3">
+              <p className="text-xs font-medium text-[#5A5744] mb-1">Signature</p>
+              {doc.signature ? (
+                <div>
+                  <img src={doc.signature} alt="Signature" className="h-16 border border-[#DFD8C2] rounded-md bg-white" />
+                  <p className="text-xs text-[#8B8974] mt-1">Signé par {doc.signataire} le {fmtDate(doc.dateSignature)}</p>
+                </div>
+              ) : (
+                <p className="text-xs text-[#8B8974]">Aucune signature.</p>
+              )}
+              <Button variant="ghost" className="mt-2" onClick={() => setShowSignature(true)}><PenTool size={14} /> {doc.signature ? "Re-signer" : "Signer le document"}</Button>
+            </div>
+
+            {shareError && <p className="text-xs text-[#A6402A]">{shareError}</p>}
+            <div className="flex gap-2 pt-2">
+              <Button variant="accent" className="flex-1" onClick={() => partager(doc)}><Send size={14} /> Partager par email</Button>
+              <Button variant="danger" onClick={() => { if (confirm("Supprimer ce document ?")) { update((d) => { d.documents = d.documents.filter((x) => x.id !== doc.id); }); setSelected(null); } }}>
+                <Trash2 size={14} />
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {showSignature && doc && (
+        <Modal title="Signer le document" onClose={() => setShowSignature(false)}>
+          <SignaturePad
+            initialNom={doc.signataire || ""}
+            onSave={(signature, signataire) => {
+              update((d) => {
+                const target = d.documents.find((x) => x.id === doc.id);
+                target.signature = signature;
+                target.signataire = signataire;
+                target.dateSignature = today();
+              });
+              setShowSignature(false);
+            }}
+          />
+        </Modal>
+      )}
     </div>
   );
 }
 
-function DocumentForm({ onSubmit, stocks = [], produits = [], devise = "FCFA" }) {
+function SignaturePad({ onSave, initialNom = "" }) {
+  const canvasRef = React.useRef(null);
+  const drawing = React.useRef(false);
+  const [empty, setEmpty] = useState(true);
+  const [nom, setNom] = useState(initialNom);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = "#FFFFFF";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.strokeStyle = "#232620";
+    ctx.lineWidth = 2.5;
+    ctx.lineCap = "round";
+  }, []);
+
+  const pos = (e) => {
+    const canvas = canvasRef.current;
+    const rect = canvas.getBoundingClientRect();
+    const point = e.touches ? e.touches[0] : e;
+    return { x: (point.clientX - rect.left) * (canvas.width / rect.width), y: (point.clientY - rect.top) * (canvas.height / rect.height) };
+  };
+
+  const start = (e) => {
+    e.preventDefault();
+    drawing.current = true;
+    const { x, y } = pos(e);
+    const ctx = canvasRef.current.getContext("2d");
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    setEmpty(false);
+  };
+  const move = (e) => {
+    if (!drawing.current) return;
+    e.preventDefault();
+    const { x, y } = pos(e);
+    const ctx = canvasRef.current.getContext("2d");
+    ctx.lineTo(x, y);
+    ctx.stroke();
+  };
+  const end = () => { drawing.current = false; };
+
+  const clear = () => {
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = "#FFFFFF";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    setEmpty(true);
+  };
+
+  const save = () => {
+    if (empty) return;
+    onSave(canvasRef.current.toDataURL("image/png"), nom.trim());
+  };
+
+  return (
+    <div className="space-y-3">
+      <Field label="Nom du signataire"><Input value={nom} onChange={(e) => setNom(e.target.value)} placeholder="Ex. Désiré Forogo" /></Field>
+      <div>
+        <p className="text-xs text-[#6E6B58] mb-1">Signez dans le cadre ci-dessous</p>
+        <canvas
+          ref={canvasRef}
+          width={500}
+          height={200}
+          className="w-full h-40 border border-[#DFD8C2] rounded-md bg-white touch-none"
+          onMouseDown={start}
+          onMouseMove={move}
+          onMouseUp={end}
+          onMouseLeave={end}
+          onTouchStart={start}
+          onTouchMove={move}
+          onTouchEnd={end}
+        />
+      </div>
+      <div className="flex gap-2">
+        <Button variant="ghost" onClick={clear} className="flex-1">Effacer</Button>
+        <Button variant="accent" onClick={save} disabled={empty || !nom.trim()} className="flex-1">Valider la signature</Button>
+      </div>
+    </div>
+  );
+}
+
+function DocumentForm({ onSubmit, stocks = [], produits = [], tiersListe = [], devise = "FCFA" }) {
   const [type, setType] = useState("recu");
   const [numero, setNumero] = useState("");
   const [date, setDate] = useState(today());
@@ -2282,7 +2918,12 @@ function DocumentForm({ onSubmit, stocks = [], produits = [], devise = "FCFA" })
       </Field>
       <Field label="Numéro"><Input value={numero} onChange={(e) => setNumero(e.target.value)} placeholder="Ex. FA-2026-014" /></Field>
       <Field label="Date"><Input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></Field>
-      <Field label="Fournisseur / Client"><Input value={tiers} onChange={(e) => setTiers(e.target.value)} /></Field>
+      <Field label="Fournisseur / Client">
+        <Input list="tiers-liste" value={tiers} onChange={(e) => setTiers(e.target.value)} />
+        <datalist id="tiers-liste">
+          {tiersListe.map((t) => <option key={t.id} value={t.nom} />)}
+        </datalist>
+      </Field>
 
       {showLignes && (
         <div className="rounded-md border border-[#DFD8C2] bg-[#FBF9F2] p-3 space-y-3">
@@ -2862,6 +3503,368 @@ function ProduitForm({ onSubmit, initial }) {
 }
 
 // ============================================================
+// CIRCUIT PRODUCTION → VENTE → CAISSE
+// ============================================================
+function genererNumeroBon(data) {
+  const annee = today().slice(0, 4);
+  const compteur = (data.productions || []).filter((p) => p.numeroBonVersement && p.numeroBonVersement.includes(annee)).length + 1;
+  return `BV-${annee}-${String(compteur).padStart(4, "0")}`;
+}
+
+function texteBonVersement(p, data) {
+  const departement = data.departements.find((d) => d.id === p.departementId);
+  const lignes = [
+    `Bon de versement ${p.numeroBonVersement}`,
+    `${data.ferme.nom}`,
+    `Date : ${fmtDate(p.dateVersement)}`,
+    "",
+    `Produit : ${p.produitNom} ${departement ? `(${departement.nom})` : ""}`,
+    `Quantité récoltée : ${p.quantiteRecoltee} ${p.unite}`,
+    `Quantité vendue : ${p.quantiteVendue} ${p.unite}${Number(p.perte) > 0 ? ` · Perte : ${p.perte} ${p.unite}` : ""}`,
+    `Montant de la vente : ${money(p.montantVente, data.ferme.devise)}`,
+    `Montant versé à la caisse : ${money(p.montantVerse, data.ferme.devise)}`,
+    "",
+    `Agent de terrain : ${p.agentTerrainNom || "—"}`,
+    `Agent de vente : ${p.agentVenteNom || "—"}`,
+    `Approuvé par (caisse) : ${p.caissierNom || "—"}`,
+  ];
+  if (p.signataire) lignes.push("", `Signé par ${p.signataire} le ${fmtDate(p.dateSignature)}`);
+  return lignes.filter(Boolean).join("\n");
+}
+
+const STATUT_PRODUCTION_LABELS = {
+  recolte: "Récolte enregistrée",
+  vente_enregistree: "Vente enregistrée — en attente de caisse",
+  verse_approuve: "Versement approuvé",
+};
+
+function ProductionCircuit({ data, update }) {
+  const [showAdd, setShowAdd] = useState(false);
+  const [selected, setSelected] = useState(null);
+  const [filtreStatut, setFiltreStatut] = useState("tous");
+  const [showSignature, setShowSignature] = useState(false);
+  const [shareError, setShareError] = useState("");
+
+  const filtered = filtreStatut === "tous" ? data.productions : data.productions.filter((p) => p.statut === filtreStatut);
+  const p = data.productions.find((x) => x.id === selected);
+  const employesActifs = data.employes.filter((e) => e.statut === "actif");
+
+  const partagerBon = async (prod) => {
+    setShareError("");
+    try {
+      await partagerDocument({
+        titre: `Bon de versement ${prod.numeroBonVersement}`,
+        sujet: `Bon de versement ${prod.numeroBonVersement} — ${data.ferme.nom}`,
+        texte: texteBonVersement(prod, data),
+        signatureDataUrl: prod.signature || null,
+        nomFichierImage: `signature-${prod.numeroBonVersement}.png`,
+      });
+    } catch (err) {
+      setShareError("Le partage a échoué. Réessayez.");
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <h2 className="font-serif text-xl">Circuit production → vente → caisse</h2>
+        <Button variant="accent" onClick={() => setShowAdd(true)}><Plus size={16} /> Nouvelle récolte</Button>
+      </div>
+      <p className="text-xs text-[#8B8974]">L'agent de terrain enregistre la récolte, l'agent de vente enregistre la vente et déclare le versement, puis la caisse approuve et délivre un bon de versement. Le revenu n'est comptabilisé dans les finances qu'une fois le versement approuvé par la caisse.</p>
+
+      <div className="flex gap-2 overflow-x-auto no-scrollbar">
+        {["tous", "recolte", "vente_enregistree", "verse_approuve"].map((f) => (
+          <button
+            key={f}
+            onClick={() => setFiltreStatut(f)}
+            className={`px-3 py-1.5 rounded-full text-xs whitespace-nowrap border ${filtreStatut === f ? "bg-[var(--color-primary)] text-white border-[var(--color-primary)]" : "bg-white text-[#5A5744] border-[#DFD8C2]"}`}
+          >
+            {f === "tous" ? "Tous" : STATUT_PRODUCTION_LABELS[f]}
+          </button>
+        ))}
+      </div>
+
+      {filtered.length === 0 ? (
+        <EmptyState icon={ClipboardList} text="Aucune récolte enregistrée." action={<Button variant="ghost" onClick={() => setShowAdd(true)}>Enregistrer une récolte</Button>} />
+      ) : (
+        <Card className="divide-y divide-[#EFEAD9]">
+          {[...filtered].reverse().map((prod) => {
+            const departement = data.departements.find((d) => d.id === prod.departementId);
+            return (
+              <div key={prod.id} className="p-3 flex items-center justify-between text-sm gap-3 cursor-pointer hover:bg-[#FBF9F2]" onClick={() => setSelected(prod.id)}>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <Badge tone={prod.statut === "verse_approuve" ? "good" : prod.statut === "vente_enregistree" ? "warn" : "default"}>{STATUT_PRODUCTION_LABELS[prod.statut]}</Badge>
+                    {departement && <span className="text-xs text-[#8B8974]">{departement.nom}</span>}
+                  </div>
+                  <p className="font-medium mt-0.5">{prod.produitNom}</p>
+                  <p className="text-xs text-[#8B8974]">Récolté le {fmtDate(prod.date)} · {prod.quantiteRecoltee} {prod.unite}</p>
+                </div>
+                <div className="flex items-center gap-3 shrink-0">
+                  {prod.montantVerse != null && <span className="font-medium">{money(prod.montantVerse, data.ferme.devise)}</span>}
+                  <ChevronRight size={16} className="text-[#C7C2A8]" />
+                </div>
+              </div>
+            );
+          })}
+        </Card>
+      )}
+
+      {showAdd && (
+        <Modal title="Nouvelle récolte" onClose={() => setShowAdd(false)}>
+          <RecolteForm
+            produits={data.produits}
+            departements={data.departements}
+            employes={employesActifs}
+            onSubmit={(vals) => {
+              update((d) => d.productions.push({ id: uid(), ...vals, statut: "recolte" }));
+              setShowAdd(false);
+            }}
+          />
+        </Modal>
+      )}
+
+      {p && p.statut === "recolte" && (
+        <Modal title={p.produitNom} onClose={() => setSelected(null)}>
+          <div className="space-y-3 text-sm">
+            <Badge tone="default">{STATUT_PRODUCTION_LABELS[p.statut]}</Badge>
+            <div className="flex justify-between"><span className="text-[#8B8974]">Récolté le</span><span>{fmtDate(p.date)}</span></div>
+            <div className="flex justify-between"><span className="text-[#8B8974]">Quantité récoltée</span><span>{p.quantiteRecoltee} {p.unite}</span></div>
+            <div className="flex justify-between"><span className="text-[#8B8974]">Agent de terrain</span><span>{p.agentTerrainNom || "—"}</span></div>
+            {p.noteRecolte && <p className="text-xs text-[#8B8974] border-t border-[#EFEAD9] pt-2">{p.noteRecolte}</p>}
+            <div className="border-t border-[#EFEAD9] pt-3">
+              <p className="text-xs font-medium text-[#5A5744] mb-2">Étape suivante : l'agent de vente enregistre la vente</p>
+              <VenteForm
+                produit={p}
+                devise={data.ferme.devise}
+                employes={employesActifs}
+                onSubmit={(vals) => {
+                  update((d) => {
+                    const target = d.productions.find((x) => x.id === p.id);
+                    Object.assign(target, vals, { statut: "vente_enregistree" });
+                  });
+                  setSelected(null);
+                }}
+              />
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {p && p.statut === "vente_enregistree" && (
+        <Modal title={p.produitNom} onClose={() => setSelected(null)}>
+          <div className="space-y-3 text-sm">
+            <Badge tone="warn">{STATUT_PRODUCTION_LABELS[p.statut]}</Badge>
+            <div className="flex justify-between"><span className="text-[#8B8974]">Quantité vendue</span><span>{p.quantiteVendue} {p.unite}</span></div>
+            {Number(p.perte) > 0 && <div className="flex justify-between"><span className="text-[#8B8974]">Perte déclarée</span><span className="text-[#A6402A]">{p.perte} {p.unite}</span></div>}
+            <div className="flex justify-between font-medium"><span>Montant de la vente</span><span>{money(p.montantVente, data.ferme.devise)}</span></div>
+            <div className="flex justify-between"><span className="text-[#8B8974]">Agent de vente</span><span>{p.agentVenteNom || "—"}</span></div>
+            {p.noteVente && <p className="text-xs text-[#8B8974]">{p.noteVente}</p>}
+            <div className="border-t border-[#EFEAD9] pt-3">
+              <p className="text-xs font-medium text-[#5A5744] mb-2">Étape suivante : la caisse approuve le versement</p>
+              <CaisseForm
+                production={p}
+                comptes={data.comptes}
+                devise={data.ferme.devise}
+                employes={employesActifs}
+                onSubmit={(vals) => {
+                  const numeroBonVersement = genererNumeroBon(data);
+                  update((d) => {
+                    const target = d.productions.find((x) => x.id === p.id);
+                    Object.assign(target, vals, { statut: "verse_approuve", numeroBonVersement });
+                    const produitLie = d.produits.find((pr) => pr.nom === p.produitNom);
+                    d.transactions.push({
+                      id: uid(), type: "revenu", categorie: `Vente ${p.produitNom}`, montant: vals.montantVerse,
+                      date: vals.dateVersement, description: `${p.produitNom} — Bon ${numeroBonVersement}`,
+                      compteId: vals.compteId || null, produitId: produitLie ? produitLie.id : null, quantite: p.quantiteVendue,
+                    });
+                  });
+                  setSelected(null);
+                }}
+              />
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {p && p.statut === "verse_approuve" && (
+        <Modal title={`Bon de versement ${p.numeroBonVersement}`} onClose={() => setSelected(null)}>
+          <div className="space-y-3 text-sm">
+            <Badge tone="good">{STATUT_PRODUCTION_LABELS[p.statut]}</Badge>
+            <div className="flex justify-between"><span className="text-[#8B8974]">Produit</span><span className="font-medium">{p.produitNom}</span></div>
+            <div className="flex justify-between"><span className="text-[#8B8974]">Quantité récoltée / vendue</span><span>{p.quantiteRecoltee} / {p.quantiteVendue} {p.unite}</span></div>
+            {Number(p.perte) > 0 && <div className="flex justify-between"><span className="text-[#8B8974]">Perte</span><span>{p.perte} {p.unite}</span></div>}
+            <div className="flex justify-between"><span className="text-[#8B8974]">Montant de la vente</span><span>{money(p.montantVente, data.ferme.devise)}</span></div>
+            <div className="bg-[var(--color-total-bg)] text-[var(--color-total-text)] rounded-md px-3 py-2 flex justify-between font-serif font-bold">
+              <span>Montant versé à la caisse</span>
+              <span className="text-[var(--color-accent)]">{money(p.montantVerse, data.ferme.devise)}</span>
+            </div>
+            <div className="grid grid-cols-2 gap-2 text-xs text-[#8B8974] border-t border-[#EFEAD9] pt-2">
+              <span>Agent de terrain : {p.agentTerrainNom || "—"}</span>
+              <span>Agent de vente : {p.agentVenteNom || "—"}</span>
+              <span>Approuvé par : {p.caissierNom || "—"}</span>
+              <span>Date : {fmtDate(p.dateVersement)}</span>
+            </div>
+
+            <div className="border-t border-[#EFEAD9] pt-3">
+              <p className="text-xs font-medium text-[#5A5744] mb-1">Signature</p>
+              {p.signature ? (
+                <div>
+                  <img src={p.signature} alt="Signature" className="h-16 border border-[#DFD8C2] rounded-md bg-white" />
+                  <p className="text-xs text-[#8B8974] mt-1">Signé par {p.signataire} le {fmtDate(p.dateSignature)}</p>
+                </div>
+              ) : (
+                <p className="text-xs text-[#8B8974]">Aucune signature.</p>
+              )}
+              <Button variant="ghost" className="mt-2" onClick={() => setShowSignature(true)}><PenTool size={14} /> {p.signature ? "Re-signer" : "Signer le bon"}</Button>
+            </div>
+
+            {shareError && <p className="text-xs text-[#A6402A]">{shareError}</p>}
+            <div className="flex gap-2 pt-2">
+              <Button variant="accent" className="flex-1" onClick={() => partagerBon(p)}><Send size={14} /> Partager par email</Button>
+              <Button variant="danger" onClick={() => { if (confirm("Supprimer cet enregistrement ?")) { update((d) => { d.productions = d.productions.filter((x) => x.id !== p.id); }); setSelected(null); } }}>
+                <Trash2 size={14} />
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {showSignature && p && (
+        <Modal title="Signer le bon de versement" onClose={() => setShowSignature(false)}>
+          <SignaturePad
+            initialNom={p.signataire || p.caissierNom || ""}
+            onSave={(signature, signataire) => {
+              update((d) => {
+                const target = d.productions.find((x) => x.id === p.id);
+                target.signature = signature;
+                target.signataire = signataire;
+                target.dateSignature = today();
+              });
+              setShowSignature(false);
+            }}
+          />
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+function RecolteForm({ onSubmit, produits = [], departements = [], employes = [] }) {
+  const [produitNom, setProduitNom] = useState("");
+  const [unite, setUnite] = useState("");
+  const [departementId, setDepartementId] = useState("");
+  const [quantiteRecoltee, setQuantiteRecoltee] = useState("");
+  const [date, setDate] = useState(today());
+  const [agentTerrainId, setAgentTerrainId] = useState("");
+  const [noteRecolte, setNoteRecolte] = useState("");
+
+  const choisirProduit = (nom) => {
+    setProduitNom(nom);
+    const p = produits.find((x) => x.nom === nom);
+    if (p && !unite) setUnite(p.unite);
+  };
+
+  return (
+    <form className="space-y-3" onSubmit={(e) => {
+      e.preventDefault(); if (!produitNom || !quantiteRecoltee) return;
+      const agent = employes.find((x) => x.id === agentTerrainId);
+      onSubmit({ produitNom, unite, departementId: departementId || null, quantiteRecoltee, date, agentTerrainId: agentTerrainId || null, agentTerrainNom: agent ? agent.nom : "", noteRecolte });
+    }}>
+      <Field label="Produit récolté">
+        <Input list="produits-recolte" value={produitNom} onChange={(e) => choisirProduit(e.target.value)} placeholder="Ex. Maïs, Lait, Œufs..." required />
+        <datalist id="produits-recolte">
+          {produits.map((p) => <option key={p.id} value={p.nom} />)}
+        </datalist>
+      </Field>
+      <Field label="Unité"><Input value={unite} onChange={(e) => setUnite(e.target.value)} placeholder="kg, L, douzaine..." /></Field>
+      <Field label="Quantité récoltée"><Input type="number" step="0.01" value={quantiteRecoltee} onChange={(e) => setQuantiteRecoltee(e.target.value)} required /></Field>
+      {departements.length > 0 && (
+        <Field label="Département">
+          <Select value={departementId} onChange={(e) => setDepartementId(e.target.value)}>
+            <option value="">Non précisé</option>
+            {departements.filter((d) => d.actif !== false).map((d) => <option key={d.id} value={d.id}>{d.nom}</option>)}
+          </Select>
+        </Field>
+      )}
+      <Field label="Date de récolte"><Input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></Field>
+      <Field label="Agent de terrain">
+        <Select value={agentTerrainId} onChange={(e) => setAgentTerrainId(e.target.value)}>
+          <option value="">Non précisé</option>
+          {employes.map((emp) => <option key={emp.id} value={emp.id}>{emp.nom}</option>)}
+        </Select>
+      </Field>
+      <Field label="Notes (optionnel)"><TextArea value={noteRecolte} onChange={(e) => setNoteRecolte(e.target.value)} /></Field>
+      <Button type="submit" variant="accent" className="w-full">Enregistrer la récolte</Button>
+    </form>
+  );
+}
+
+function VenteForm({ onSubmit, produit, devise = "FCFA", employes = [] }) {
+  const [quantiteVendue, setQuantiteVendue] = useState(produit.quantiteRecoltee || "");
+  const [perte, setPerte] = useState(0);
+  const [prixUnitaire, setPrixUnitaire] = useState("");
+  const [agentVenteId, setAgentVenteId] = useState("");
+  const [dateVente, setDateVente] = useState(today());
+  const [noteVente, setNoteVente] = useState("");
+
+  const montantVente = Number(quantiteVendue || 0) * Number(prixUnitaire || 0);
+
+  return (
+    <form className="space-y-3" onSubmit={(e) => {
+      e.preventDefault(); if (!quantiteVendue || !prixUnitaire) return;
+      const agent = employes.find((x) => x.id === agentVenteId);
+      onSubmit({ quantiteVendue, perte: perte || 0, prixUnitaire, montantVente, agentVenteId: agentVenteId || null, agentVenteNom: agent ? agent.nom : "", dateVente, noteVente });
+    }}>
+      <Field label={`Quantité vendue (${produit.unite})`}><Input type="number" step="0.01" value={quantiteVendue} onChange={(e) => setQuantiteVendue(e.target.value)} required /></Field>
+      <Field label={`Perte éventuelle (${produit.unite})`}><Input type="number" step="0.01" value={perte} onChange={(e) => setPerte(e.target.value)} /></Field>
+      <Field label={`Prix unitaire (${devise})`}><Input type="number" step="0.01" value={prixUnitaire} onChange={(e) => setPrixUnitaire(e.target.value)} required /></Field>
+      <p className="text-xs text-[#8B8974]">Montant de la vente : <span className="font-medium text-[#232620]">{money(montantVente, devise)}</span></p>
+      <Field label="Agent de vente">
+        <Select value={agentVenteId} onChange={(e) => setAgentVenteId(e.target.value)}>
+          <option value="">Non précisé</option>
+          {employes.map((emp) => <option key={emp.id} value={emp.id}>{emp.nom}</option>)}
+        </Select>
+      </Field>
+      <Field label="Date de vente"><Input type="date" value={dateVente} onChange={(e) => setDateVente(e.target.value)} /></Field>
+      <Field label="Notes (optionnel)"><TextArea value={noteVente} onChange={(e) => setNoteVente(e.target.value)} /></Field>
+      <Button type="submit" variant="accent" className="w-full">Enregistrer la vente et déclarer le versement</Button>
+    </form>
+  );
+}
+
+function CaisseForm({ onSubmit, production, comptes = [], devise = "FCFA", employes = [] }) {
+  const [montantVerse, setMontantVerse] = useState(production.montantVente || "");
+  const [compteId, setCompteId] = useState("");
+  const [caissierId, setCaissierId] = useState("");
+  const [dateVersement, setDateVersement] = useState(today());
+
+  return (
+    <form className="space-y-3" onSubmit={(e) => {
+      e.preventDefault(); if (!montantVerse) return;
+      const caissier = employes.find((x) => x.id === caissierId);
+      onSubmit({ montantVerse, compteId: compteId || null, caissierId: caissierId || null, caissierNom: caissier ? caissier.nom : "", dateVersement });
+    }}>
+      <Field label={`Montant versé (${devise})`}><Input type="number" step="0.01" value={montantVerse} onChange={(e) => setMontantVerse(e.target.value)} required /></Field>
+      <Field label="Compte de destination">
+        <Select value={compteId} onChange={(e) => setCompteId(e.target.value)}>
+          <option value="">Espèces (non rattaché)</option>
+          {comptes.map((c) => <option key={c.id} value={c.id}>{COMPTE_LABELS[c.type]} — {c.nom}</option>)}
+        </Select>
+      </Field>
+      <Field label="Approuvé par (caisse)">
+        <Select value={caissierId} onChange={(e) => setCaissierId(e.target.value)}>
+          <option value="">Non précisé</option>
+          {employes.map((emp) => <option key={emp.id} value={emp.id}>{emp.nom}</option>)}
+        </Select>
+      </Field>
+      <Field label="Date de versement"><Input type="date" value={dateVersement} onChange={(e) => setDateVersement(e.target.value)} /></Field>
+      <Button type="submit" variant="accent" className="w-full">Approuver et générer le bon de versement</Button>
+    </form>
+  );
+}
+
+// ============================================================
 // PERSONNEL (liste, contrats, salaires, congés)
 // ============================================================
 function Personnel({ data, update }) {
@@ -2869,6 +3872,7 @@ function Personnel({ data, update }) {
   const [selected, setSelected] = useState(null);
   const [showPointage, setShowPointage] = useState(false);
   const [datePointage, setDatePointage] = useState(today());
+  const [filtreDepartement, setFiltreDepartement] = useState("tous");
   const employe = data.employes.find((e) => e.id === selected);
 
   if (employe) return <EmployeDetail employe={employe} data={data} update={update} onBack={() => setSelected(null)} />;
@@ -2876,6 +3880,8 @@ function Personnel({ data, update }) {
   const masseSalarialeMensuelle = data.employes
     .filter((e) => e.statut === "actif")
     .reduce((s, e) => s + Number(e.salaireMensuel || 0), 0);
+
+  const employesFiltres = filtreDepartement === "tous" ? data.employes : data.employes.filter((e) => e.departementId === filtreDepartement);
 
   const employesActifs = data.employes.filter((e) => e.statut === "actif");
   const pointageDuJour = (nom) => today() === datePointage
@@ -2948,12 +3954,29 @@ function Personnel({ data, update }) {
         </Card>
       )}
 
+      {data.departements.length > 0 && (
+        <div className="flex gap-2 overflow-x-auto no-scrollbar">
+          <button
+            onClick={() => setFiltreDepartement("tous")}
+            className={`px-3 py-1.5 rounded-full text-xs whitespace-nowrap border ${filtreDepartement === "tous" ? "bg-[var(--color-primary)] text-white border-[var(--color-primary)]" : "bg-white text-[#5A5744] border-[#DFD8C2]"}`}
+          >Tous</button>
+          {data.departements.filter((d) => d.actif !== false).map((d) => (
+            <button
+              key={d.id}
+              onClick={() => setFiltreDepartement(d.id)}
+              className={`px-3 py-1.5 rounded-full text-xs whitespace-nowrap border ${filtreDepartement === d.id ? "bg-[var(--color-primary)] text-white border-[var(--color-primary)]" : "bg-white text-[#5A5744] border-[#DFD8C2]"}`}
+            >{d.nom}</button>
+          ))}
+        </div>
+      )}
+
       {data.employes.length === 0 ? (
         <EmptyState icon={Users} text="Aucun employé enregistré." action={<Button variant="ghost" onClick={() => setShowAdd(true)}>Ajouter un employé</Button>} />
       ) : (
         <div className="grid sm:grid-cols-2 gap-3">
-          {data.employes.map((e) => {
+          {employesFiltres.map((e) => {
             const congesEnCours = (e.conges || []).filter((c) => c.statut === "en_cours" || (c.dateDebut <= today() && c.dateFin >= today()));
+            const departement = data.departements.find((d) => d.id === e.departementId);
             return (
               <Card key={e.id} className="p-4 cursor-pointer hover:border-[var(--color-accent)]" onClick={() => setSelected(e.id)}>
                 <div className="flex items-center justify-between">
@@ -2968,6 +3991,8 @@ function Personnel({ data, update }) {
                 </div>
                 <div className="flex items-center gap-2 mt-3 flex-wrap">
                   <Badge tone="accent">{CONTRAT_LABELS[e.typeContrat] || e.typeContrat}</Badge>
+                  {e.niveauHierarchique && <Badge tone="default">{e.niveauHierarchique}</Badge>}
+                  {departement && <Badge tone="default">{departement.nom}</Badge>}
                   <Badge tone={e.statut === "actif" ? "good" : "default"}>{e.statut === "actif" ? "Actif" : "Inactif"}</Badge>
                   {congesEnCours.length > 0 && <Badge tone="warn">En congé</Badge>}
                 </div>
@@ -2981,8 +4006,9 @@ function Personnel({ data, update }) {
       {showAdd && (
         <Modal title="Nouvel employé" onClose={() => setShowAdd(false)}>
           <EmployeForm
+            departements={data.departements}
             onSubmit={(vals) => {
-              update((d) => d.employes.push({ id: uid(), ...vals, conges: [], presences: [] }));
+              update((d) => d.employes.push({ id: uid(), ...vals, conges: [], presences: [], evaluations: [], documentsPerso: [], bulletins: [] }));
               setShowAdd(false);
             }}
           />
@@ -2992,19 +4018,59 @@ function Personnel({ data, update }) {
   );
 }
 
-function EmployeForm({ onSubmit, initial }) {
+function EmployeForm({ onSubmit, initial, departements = [] }) {
   const [nom, setNom] = useState(initial?.nom || "");
   const [poste, setPoste] = useState(initial?.poste || "");
+  const [niveauHierarchique, setNiveauHierarchique] = useState(initial?.niveauHierarchique || HIERARCHIE_POSTES[0]);
+  const [sectionProduction, setSectionProduction] = useState(initial?.sectionProduction || "");
+  const [competence, setCompetence] = useState(initial?.competence || "");
+  const [departementId, setDepartementId] = useState(initial?.departementId || "");
   const [typeContrat, setTypeContrat] = useState(initial?.typeContrat || "cdi");
   const [salaireMensuel, setSalaireMensuel] = useState(initial?.salaireMensuel ?? "");
   const [dateDebut, setDateDebut] = useState(initial?.dateDebut || today());
   const [dateFin, setDateFin] = useState(initial?.dateFin || "");
   const [statut, setStatut] = useState(initial?.statut || "actif");
   const [telephone, setTelephone] = useState(initial?.telephone || "");
+  const [situationFamiliale, setSituationFamiliale] = useState(initial?.situationFamiliale || "celibataire");
+  const [nombreEnfants, setNombreEnfants] = useState(initial?.nombreEnfants ?? 0);
   return (
-    <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); if (!nom) return; onSubmit({ nom, poste, typeContrat, salaireMensuel: salaireMensuel || 0, dateDebut, dateFin: dateFin || null, statut, telephone }); }}>
+    <form className="space-y-3" onSubmit={(e) => {
+      e.preventDefault(); if (!nom) return;
+      onSubmit({
+        nom, poste, niveauHierarchique, sectionProduction, competence, departementId: departementId || null,
+        typeContrat, salaireMensuel: salaireMensuel || 0, dateDebut, dateFin: dateFin || null, statut, telephone,
+        situationFamiliale, nombreEnfants: nombreEnfants || 0,
+      });
+    }}>
       <Field label="Nom complet"><Input value={nom} onChange={(e) => setNom(e.target.value)} required /></Field>
-      <Field label="Poste"><Input value={poste} onChange={(e) => setPoste(e.target.value)} placeholder="Ex. Ouvrier agricole, Vacher..." /></Field>
+      <Field label="Intitulé du poste"><Input value={poste} onChange={(e) => setPoste(e.target.value)} placeholder="Ex. Ouvrier agricole, Vacher..." /></Field>
+      <Field label="Niveau hiérarchique">
+        <Select value={niveauHierarchique} onChange={(e) => setNiveauHierarchique(e.target.value)}>
+          {HIERARCHIE_POSTES.map((p) => <option key={p} value={p}>{p}</option>)}
+        </Select>
+      </Field>
+      {niveauHierarchique === "Technicien de production" && (
+        <Field label="Unité / section de production">
+          <Input list="sections-production" value={sectionProduction} onChange={(e) => setSectionProduction(e.target.value)} placeholder="Ex. Maraîchage, Pisciculture..." />
+          <datalist id="sections-production">
+            {SECTIONS_PRODUCTION_SUGGESTIONS.map((s) => <option key={s} value={s} />)}
+          </datalist>
+        </Field>
+      )}
+      <Field label="Type de compétence">
+        <Input list="competences-liste" value={competence} onChange={(e) => setCompetence(e.target.value)} placeholder="Ex. Agronome, Comptable, Chauffeur..." />
+        <datalist id="competences-liste">
+          {COMPETENCES_SUGGESTIONS.map((c) => <option key={c} value={c} />)}
+        </datalist>
+      </Field>
+      {departements.length > 0 && (
+        <Field label="Département">
+          <Select value={departementId} onChange={(e) => setDepartementId(e.target.value)}>
+            <option value="">Non précisé</option>
+            {departements.filter((d) => d.actif !== false).map((d) => <option key={d.id} value={d.id}>{d.nom}</option>)}
+          </Select>
+        </Field>
+      )}
       <Field label="Téléphone"><Input value={telephone} onChange={(e) => setTelephone(e.target.value)} /></Field>
       <Field label="Type de contrat">
         <Select value={typeContrat} onChange={(e) => setTypeContrat(e.target.value)}>
@@ -3026,15 +4092,43 @@ function EmployeForm({ onSubmit, initial }) {
           <option value="inactif">Inactif</option>
         </Select>
       </Field>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Situation familiale">
+          <Select value={situationFamiliale} onChange={(e) => setSituationFamiliale(e.target.value)}>
+            <option value="celibataire">Célibataire</option>
+            <option value="marie">Marié(e)</option>
+          </Select>
+        </Field>
+        <Field label="Enfants à charge"><Input type="number" min="0" step="1" value={nombreEnfants} onChange={(e) => setNombreEnfants(e.target.value)} /></Field>
+      </div>
+      <p className="text-xs text-[#8B8974]">Situation familiale et enfants à charge servent au calcul de la réduction ITS sur le bulletin de paie.</p>
       <Button type="submit" variant="accent" className="w-full">{initial ? "Mettre à jour" : "Ajouter l'employé"}</Button>
     </form>
   );
+}
+
+function calculAnciennete(dateDebut, dateFin) {
+  if (!dateDebut) return "";
+  const debut = new Date(dateDebut);
+  const fin = dateFin ? new Date(dateFin) : new Date();
+  let mois = (fin.getFullYear() - debut.getFullYear()) * 12 + (fin.getMonth() - debut.getMonth());
+  if (fin.getDate() < debut.getDate()) mois -= 1;
+  mois = Math.max(mois, 0);
+  const annees = Math.floor(mois / 12);
+  const moisRestants = mois % 12;
+  if (annees === 0) return `${moisRestants} mois`;
+  if (moisRestants === 0) return `${annees} an${annees > 1 ? "s" : ""}`;
+  return `${annees} an${annees > 1 ? "s" : ""} et ${moisRestants} mois`;
 }
 
 function EmployeDetail({ employe, data, update, onBack }) {
   const [showEdit, setShowEdit] = useState(false);
   const [showConge, setShowConge] = useState(false);
   const [showPaie, setShowPaie] = useState(false);
+  const [showEvaluation, setShowEvaluation] = useState(false);
+  const [showDocument, setShowDocument] = useState(false);
+  const [showBulletin, setShowBulletin] = useState(false);
+  const [selectedBulletin, setSelectedBulletin] = useState(null);
   const moisCourant = today().slice(0, 7);
   const inMonth = (d) => d && d.slice(0, 7) === moisCourant;
 
@@ -3048,12 +4142,16 @@ function EmployeDetail({ employe, data, update, onBack }) {
         <div>
           <h2 className="font-serif text-xl">{employe.nom}</h2>
           <p className="text-xs text-[#8B8974]">{employe.poste || "Poste non précisé"} {employe.telephone && `· ${employe.telephone}`}</p>
-          <div className="flex items-center gap-2 mt-2">
+          <div className="flex items-center gap-2 mt-2 flex-wrap">
             <Badge tone="accent">{CONTRAT_LABELS[employe.typeContrat]}</Badge>
+            {employe.niveauHierarchique && <Badge tone="default">{employe.niveauHierarchique}</Badge>}
+            {employe.sectionProduction && <Badge tone="default">{employe.sectionProduction}</Badge>}
+            {employe.competence && <Badge tone="default">{employe.competence}</Badge>}
+            {data.departements.find((d) => d.id === employe.departementId) && <Badge tone="default">{data.departements.find((d) => d.id === employe.departementId).nom}</Badge>}
             <Badge tone={employe.statut === "actif" ? "good" : "default"}>{employe.statut === "actif" ? "Actif" : "Inactif"}</Badge>
           </div>
           <p className="text-xs text-[#8B8974] mt-1">
-            Depuis {fmtDate(employe.dateDebut)}{employe.dateFin ? ` — jusqu'au ${fmtDate(employe.dateFin)}` : ""}
+            Depuis {fmtDate(employe.dateDebut)}{employe.dateFin ? ` — jusqu'au ${fmtDate(employe.dateFin)}` : ""} · Ancienneté : {calculAnciennete(employe.dateDebut, employe.dateFin)}
           </p>
         </div>
         <button onClick={() => setShowEdit(true)} className="text-[#8B5E3C] text-xs">Modifier</button>
@@ -3073,6 +4171,26 @@ function EmployeDetail({ employe, data, update, onBack }) {
               <li key={p.id} className="flex justify-between">
                 <span>{p.description || "Salaire"}</span>
                 <span className="text-[#8B8974]">{money(p.montant, data.ferme.devise)} · {fmtDate(p.date)}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
+
+      <Card className="p-4">
+        <div className="flex items-center justify-between">
+          <h3 className="font-serif text-sm">Bulletin de paie</h3>
+          <Button variant="accent" onClick={() => setShowBulletin(true)}>Générer un bulletin</Button>
+        </div>
+        <p className="text-xs text-[#8B8974] mt-1">Calcul complet selon le barème malien (ITS, INPS, AMO) — enregistre automatiquement le salaire net en charge salariale et les charges patronales en charge fixe du mois.</p>
+        {(!employe.bulletins || employe.bulletins.length === 0) ? (
+          <p className="text-sm text-[#8B8974] mt-2">Aucun bulletin généré.</p>
+        ) : (
+          <ul className="mt-2 space-y-1 text-sm">
+            {[...employe.bulletins].reverse().map((b) => (
+              <li key={b.id} className="flex justify-between items-center border-b border-[#EFEAD9] pb-1.5">
+                <button onClick={() => setSelectedBulletin(b)} className="text-left text-[#8B5E3C]">{b.mois}</button>
+                <span className="text-[#8B8974]">Net : {money(b.net, data.ferme.devise)}</span>
               </li>
             ))}
           </ul>
@@ -3129,10 +4247,63 @@ function EmployeDetail({ employe, data, update, onBack }) {
         )}
       </Card>
 
+      <Card className="p-4">
+        <SectionTitle icon={TrendingUp} title="Évaluations" onClick={() => setShowEvaluation(true)} />
+        {(!employe.evaluations || employe.evaluations.length === 0) ? (
+          <p className="text-sm text-[#8B8974] mt-2">Aucune évaluation enregistrée.</p>
+        ) : (
+          <>
+            <p className="text-xs text-[#8B8974] mt-2">
+              Note moyenne : <span className="font-medium text-[#232620]">{(employe.evaluations.reduce((s, e) => s + Number(e.note || 0), 0) / employe.evaluations.length).toFixed(1)} / 5</span>
+            </p>
+            <ul className="mt-2 space-y-2 text-sm">
+              {[...employe.evaluations].reverse().map((ev) => (
+                <li key={ev.id} className="border-b border-[#EFEAD9] pb-2">
+                  <div className="flex justify-between">
+                    <span className="font-medium">{ev.service || "Service non précisé"}</span>
+                    <span className="text-[#8B5E14]">{"★".repeat(Number(ev.note || 0))}{"☆".repeat(5 - Number(ev.note || 0))}</span>
+                  </div>
+                  <p className="text-xs text-[#8B8974]">{fmtDate(ev.date)}</p>
+                  {ev.commentaire && <p className="text-xs mt-0.5">{ev.commentaire}</p>}
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+        <Button variant="ghost" className="mt-3" onClick={() => setShowEvaluation(true)}><Plus size={14} /> Ajouter une évaluation</Button>
+      </Card>
+
+      <Card className="p-4">
+        <SectionTitle icon={FileText} title="Documents (CV, attestation...)" onClick={() => setShowDocument(true)} />
+        {(!employe.documentsPerso || employe.documentsPerso.length === 0) ? (
+          <p className="text-sm text-[#8B8974] mt-2">Aucun document enregistré.</p>
+        ) : (
+          <ul className="mt-2 space-y-1 text-sm">
+            {[...employe.documentsPerso].reverse().map((doc) => (
+              <li key={doc.id} className="flex items-center justify-between border-b border-[#EFEAD9] pb-1.5">
+                <div className="flex items-center gap-2 min-w-0">
+                  <Badge tone="accent">{DOC_PERSO_LABELS[doc.type] || doc.type}</Badge>
+                  <span className="truncate">{doc.nom}</span>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  {doc.fichier && <a href={doc.fichier} download={doc.nom} className="text-[#8B5E3C] text-xs">Voir</a>}
+                  <span className="text-xs text-[#8B8974]">{fmtDate(doc.date)}</span>
+                  <button onClick={() => update((d) => { const e = d.employes.find((x) => x.id === employe.id); e.documentsPerso = e.documentsPerso.filter((x) => x.id !== doc.id); })} className="text-[#C7C2A8] hover:text-[#A6402A]">
+                    <Trash2 size={12} />
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+        <Button variant="ghost" className="mt-3" onClick={() => setShowDocument(true)}><Plus size={14} /> Ajouter un document</Button>
+      </Card>
+
       {showEdit && (
         <Modal title="Modifier l'employé" onClose={() => setShowEdit(false)}>
           <EmployeForm
             initial={employe}
+            departements={data.departements}
             onSubmit={(vals) => {
               update((d) => { const e = d.employes.find((x) => x.id === employe.id); Object.assign(e, vals); });
               setShowEdit(false);
@@ -3178,7 +4349,220 @@ function EmployeDetail({ employe, data, update, onBack }) {
           />
         </Modal>
       )}
+
+      {showEvaluation && (
+        <Modal title="Nouvelle évaluation" onClose={() => setShowEvaluation(false)}>
+          <EvaluationForm
+            onSubmit={(vals) => {
+              update((d) => { const e = d.employes.find((x) => x.id === employe.id); e.evaluations = e.evaluations || []; e.evaluations.push({ id: uid(), ...vals }); });
+              setShowEvaluation(false);
+            }}
+          />
+        </Modal>
+      )}
+
+      {showDocument && (
+        <Modal title="Nouveau document" onClose={() => setShowDocument(false)}>
+          <DocumentPersoForm
+            onSubmit={(vals) => {
+              update((d) => { const e = d.employes.find((x) => x.id === employe.id); e.documentsPerso = e.documentsPerso || []; e.documentsPerso.push({ id: uid(), ...vals }); });
+              setShowDocument(false);
+            }}
+          />
+        </Modal>
+      )}
+
+      {showBulletin && (
+        <Modal title="Générer un bulletin de paie" onClose={() => setShowBulletin(false)}>
+          <BulletinPaieForm
+            employe={employe}
+            comptes={data.comptes}
+            devise={data.ferme.devise}
+            onSubmit={({ mois, brut, primes, tauxAutresChargesPatronales, compteId, calc }) => {
+              update((d) => {
+                const e = d.employes.find((x) => x.id === employe.id);
+                e.bulletins = e.bulletins || [];
+                e.bulletins.push({ id: uid(), mois, brut, primes, tauxAutresChargesPatronales, ...calc, dateEmission: today() });
+                d.transactions.push({
+                  id: uid(), type: "depense", categorie: "Salaire", montant: calc.net, date: today(),
+                  description: `Salaire net — ${employe.nom} (${mois})`, compteId: compteId || null,
+                  typeCharge: "salariale", employeId: employe.id, produitId: null, quantite: null,
+                });
+                d.transactions.push({
+                  id: uid(), type: "depense", categorie: "Charges patronales (INPS/AMO/ANPE)", montant: calc.totalChargesPatronales, date: today(),
+                  description: `Charges patronales — ${employe.nom} (${mois})`, compteId: compteId || null,
+                  typeCharge: "fixe", employeId: employe.id, produitId: null, quantite: null,
+                });
+              });
+              setShowBulletin(false);
+            }}
+          />
+        </Modal>
+      )}
+
+      {selectedBulletin && (
+        <Modal title={`Bulletin de paie — ${selectedBulletin.mois}`} onClose={() => setSelectedBulletin(null)}>
+          <BulletinPaieDetail bulletin={selectedBulletin} employe={employe} devise={data.ferme.devise} nomFerme={data.ferme.nom} />
+        </Modal>
+      )}
     </div>
+  );
+}
+
+function BulletinPaieForm({ onSubmit, employe, comptes = [], devise = "FCFA" }) {
+  const [mois, setMois] = useState(today().slice(0, 7));
+  const [brut, setBrut] = useState(employe.salaireMensuel || "");
+  const [primes, setPrimes] = useState("");
+  const [tauxAutresChargesPatronales, setTauxAutresChargesPatronales] = useState(TAUX_AUTRES_CHARGES_PATRONALES_DEFAUT);
+  const [compteId, setCompteId] = useState("");
+
+  const calc = calculBulletinPaie({
+    brut: brut || 0, primes: primes || 0,
+    situationFamiliale: employe.situationFamiliale, nombreEnfants: employe.nombreEnfants,
+    tauxAutresChargesPatronales,
+  });
+
+  return (
+    <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); onSubmit({ mois, brut: brut || 0, primes: primes || 0, tauxAutresChargesPatronales, compteId, calc }); }}>
+      <Field label="Mois"><Input type="month" value={mois} onChange={(e) => setMois(e.target.value)} /></Field>
+      <Field label={`Salaire de base brut (${devise})`}><Input type="number" step="0.01" value={brut} onChange={(e) => setBrut(e.target.value)} /></Field>
+      <Field label={`Primes / indemnités (${devise}, optionnel)`}><Input type="number" step="0.01" value={primes} onChange={(e) => setPrimes(e.target.value)} /></Field>
+      <Field label="Taux autres charges patronales (%)">
+        <Input type="number" step="0.1" value={tauxAutresChargesPatronales} onChange={(e) => setTauxAutresChargesPatronales(e.target.value)} />
+        <p className="text-xs text-[#8B8974] mt-1">Prestations familiales, accidents du travail (1 à 4% selon secteur), formation... — estimation à ajuster selon votre secteur d'activité.</p>
+      </Field>
+      <Field label="Moyen de paiement">
+        <Select value={compteId} onChange={(e) => setCompteId(e.target.value)}>
+          <option value="">Espèces (non rattaché)</option>
+          {comptes.map((c) => <option key={c.id} value={c.id}>{COMPTE_LABELS[c.type]} — {c.nom}</option>)}
+        </Select>
+      </Field>
+
+      <div className="rounded-md border border-[#DFD8C2] bg-[#FBF9F2] p-3 space-y-1 text-sm">
+        <div className="flex justify-between"><span className="text-[#8B8974]">Brut total</span><span>{money(calc.brutTotal, devise)}</span></div>
+        <div className="flex justify-between"><span className="text-[#8B8974]">INPS salarial (3,6%)</span><span>-{money(calc.inpsSalarial, devise)}</span></div>
+        <div className="flex justify-between"><span className="text-[#8B8974]">AMO salarial (3,06%)</span><span>-{money(calc.amoSalarial, devise)}</span></div>
+        <div className="flex justify-between"><span className="text-[#8B8974]">ITS</span><span>-{money(calc.its, devise)}</span></div>
+        <div className="flex justify-between font-medium border-t border-[#DFD8C2] pt-1"><span>Net à payer</span><span className="text-[#3C5A34]">{money(calc.net, devise)}</span></div>
+        <div className="flex justify-between text-[#8B8974] pt-1"><span>Charges patronales (total)</span><span>{money(calc.totalChargesPatronales, devise)}</span></div>
+        <div className="flex justify-between text-[#8B8974]"><span>Coût total employeur</span><span>{money(calc.coutTotalEmployeur, devise)}</span></div>
+      </div>
+
+      <Button type="submit" variant="accent" className="w-full">Générer et enregistrer le bulletin</Button>
+    </form>
+  );
+}
+
+function BulletinPaieDetail({ bulletin: b, employe, devise, nomFerme }) {
+  return (
+    <div className="space-y-4 text-sm">
+      <div className="flex justify-between border-b border-[#DFD8C2] pb-2">
+        <div>
+          <p className="font-serif font-bold">{nomFerme}</p>
+          <p className="text-xs text-[#8B8974]">Bulletin de paie — {b.mois}</p>
+        </div>
+        <div className="text-right">
+          <p className="font-medium">{employe.nom}</p>
+          <p className="text-xs text-[#8B8974]">{employe.poste || "—"}</p>
+        </div>
+      </div>
+
+      <div>
+        <p className="font-serif text-sm font-bold mb-1">Gains</p>
+        <div className="flex justify-between"><span className="text-[#8B8974]">Salaire de base</span><span>{money(b.brut, devise)}</span></div>
+        {Number(b.primes) > 0 && <div className="flex justify-between"><span className="text-[#8B8974]">Primes / indemnités</span><span>{money(b.primes, devise)}</span></div>}
+        <div className="flex justify-between font-medium border-t border-[#EFEAD9] pt-1 mt-1"><span>Salaire brut total</span><span>{money(b.brutTotal, devise)}</span></div>
+      </div>
+
+      <div>
+        <p className="font-serif text-sm font-bold mb-1">Retenues salariales</p>
+        <div className="flex justify-between"><span className="text-[#8B8974]">INPS — retraite (3,6%)</span><span>-{money(b.inpsSalarial, devise)}</span></div>
+        <div className="flex justify-between"><span className="text-[#8B8974]">AMO — assurance maladie (3,06%)</span><span>-{money(b.amoSalarial, devise)}</span></div>
+        <div className="flex justify-between"><span className="text-[#8B8974]">ITS (impôt sur salaires)</span><span>-{money(b.its, devise)}</span></div>
+        <div className="flex justify-between font-medium border-t border-[#EFEAD9] pt-1 mt-1"><span>Total retenues</span><span>-{money(b.totalRetenues, devise)}</span></div>
+      </div>
+
+      <div className="bg-[var(--color-total-bg)] text-[var(--color-total-text)] rounded-md px-3 py-2 flex justify-between font-serif font-bold">
+        <span>Net à payer</span>
+        <span className="text-[var(--color-accent)]">{money(b.net, devise)}</span>
+      </div>
+
+      <div>
+        <p className="font-serif text-sm font-bold mb-1">Charges patronales (à la charge de l'employeur)</p>
+        <div className="flex justify-between"><span className="text-[#8B8974]">INPS patronal (5,4%)</span><span>{money(b.inpsPatronal, devise)}</span></div>
+        <div className="flex justify-between"><span className="text-[#8B8974]">AMO patronal (3,5%)</span><span>{money(b.amoPatronal, devise)}</span></div>
+        <div className="flex justify-between"><span className="text-[#8B8974]">ANPE (1%)</span><span>{money(b.anpePatronal, devise)}</span></div>
+        <div className="flex justify-between"><span className="text-[#8B8974]">Autres charges patronales ({b.tauxAutresChargesPatronales}%)</span><span>{money(b.autresChargesPatronales, devise)}</span></div>
+        <div className="flex justify-between font-medium border-t border-[#EFEAD9] pt-1 mt-1"><span>Total charges patronales</span><span>{money(b.totalChargesPatronales, devise)}</span></div>
+        <div className="flex justify-between font-medium"><span>Coût total employeur</span><span>{money(b.coutTotalEmployeur, devise)}</span></div>
+      </div>
+
+      <p className="text-xs text-[#8B8974]">Le salaire net a été enregistré en charge salariale et les charges patronales en charge fixe du mois de génération. Taux INPS/AMO et barème ITS conformes au Code Général des Impôts du Mali.</p>
+    </div>
+  );
+}
+
+function EvaluationForm({ onSubmit }) {
+  const [service, setService] = useState("");
+  const [note, setNote] = useState(5);
+  const [date, setDate] = useState(today());
+  const [commentaire, setCommentaire] = useState("");
+  return (
+    <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); onSubmit({ service, note, date, commentaire }); }}>
+      <Field label="Service / poste évalué"><Input value={service} onChange={(e) => setService(e.target.value)} placeholder="Ex. Traite du lait, Gardiennage..." /></Field>
+      <Field label="Date"><Input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></Field>
+      <Field label="Note">
+        <div className="flex gap-1.5">
+          {[1, 2, 3, 4, 5].map((n) => (
+            <button
+              key={n}
+              type="button"
+              onClick={() => setNote(n)}
+              className={`h-9 w-9 rounded-md border text-sm ${Number(note) >= n ? "bg-[var(--color-accent)] text-white border-[var(--color-accent)]" : "bg-white text-[#8B8974] border-[#DFD8C2]"}`}
+            >{n}</button>
+          ))}
+        </div>
+      </Field>
+      <Field label="Commentaire (optionnel)"><TextArea value={commentaire} onChange={(e) => setCommentaire(e.target.value)} placeholder="Ponctualité, qualité du travail, assiduité, initiative..." /></Field>
+      <Button type="submit" variant="accent" className="w-full">Enregistrer</Button>
+    </form>
+  );
+}
+
+function DocumentPersoForm({ onSubmit }) {
+  const [type, setType] = useState("cv");
+  const [nom, setNom] = useState("");
+  const [date, setDate] = useState(today());
+  const [fichier, setFichier] = useState(null);
+  const [error, setError] = useState("");
+
+  const uploadFichier = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 1024 * 1024) {
+      setError("Fichier trop lourd (max 1 Mo). Choisissez un fichier plus léger ou une photo compressée.");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => { setFichier(reader.result); setError(""); };
+    reader.readAsDataURL(file);
+  };
+
+  return (
+    <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); if (!nom) return; onSubmit({ type, nom, date, fichier }); }}>
+      <Field label="Type de document">
+        <Select value={type} onChange={(e) => setType(e.target.value)}>
+          {Object.entries(DOC_PERSO_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+        </Select>
+      </Field>
+      <Field label="Nom / intitulé"><Input value={nom} onChange={(e) => setNom(e.target.value)} placeholder="Ex. CV 2026, Attestation de travail..." /></Field>
+      <Field label="Date"><Input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></Field>
+      <Field label="Fichier (image ou PDF, optionnel, max 1 Mo)">
+        <input type="file" accept="image/*,.pdf" onChange={uploadFichier} className="text-sm" />
+      </Field>
+      {error && <p className="text-xs text-[#A6402A]">{error}</p>}
+      <Button type="submit" variant="accent" className="w-full">Enregistrer</Button>
+    </form>
   );
 }
 
