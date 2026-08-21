@@ -134,8 +134,15 @@ const THEMES = {
 
 const THEME_LABELS = { vert: "Vert", bleu: "Bleu", brun: "Brun", vertBlanc: "Vert — corps blanc", bleuBlanc: "Bleu — corps blanc" };
 
+function formatNombre(n) {
+  const num = Number(n || 0);
+  const [entier, decimales] = num.toFixed(2).split(".");
+  const entierAvecEspaces = entier.replace(/\B(?=(\d{3})+(?!\d))/g, " ");
+  return decimales === "00" ? entierAvecEspaces : `${entierAvecEspaces},${decimales}`;
+}
+
 function money(amount, devise) {
-  return `${Number(amount || 0).toLocaleString("fr-FR")} ${devise || "FCFA"}`;
+  return `${formatNombre(amount)} ${devise || "FCFA"}`;
 }
 
 // ---------- Small UI primitives ----------
@@ -1879,7 +1886,7 @@ function Finances({ data, update }) {
                   </p>
                 </div>
                 <span className={t.type === "revenu" ? "text-[#3C5A34] font-medium" : "text-[#A6402A] font-medium"}>
-                  {t.type === "revenu" ? "+" : "-"}{Number(t.montant).toLocaleString("fr-FR")}
+                  {t.type === "revenu" ? "+" : "-"}{formatNombre(t.montant)}
                 </span>
               </div>
             );
@@ -2737,7 +2744,7 @@ function Comptes({ data, update }) {
                     <p className="text-xs text-[#8B8974]">{fmtDate(t.date)}</p>
                   </div>
                   <span className={t.type === "revenu" ? "text-[#3C5A34]" : "text-[#A6402A]"}>
-                    {t.type === "revenu" ? "+" : "-"}{Number(t.montant).toLocaleString("fr-FR")}
+                    {t.type === "revenu" ? "+" : "-"}{formatNombre(t.montant)}
                   </span>
                 </div>
               ))
@@ -3722,7 +3729,7 @@ function Produits({ data, update }) {
                   <dt className="text-[#8B8974]">Chiffre d'affaires</dt>
                   <dd className="text-right font-medium">{money(p.chiffreAffaires, data.ferme.devise)}</dd>
                   <dt className="text-[#8B8974]">Quantité vendue</dt>
-                  <dd className="text-right">{p.quantiteVendue.toLocaleString("fr-FR")} {p.unite}</dd>
+                  <dd className="text-right">{formatNombre(p.quantiteVendue)} {p.unite}</dd>
                   <dt className="text-[#8B8974]">Coût de production</dt>
                   <dd className="text-right">{money(p.coutProduction, data.ferme.devise)}</dd>
                   <dt className="text-[#8B8974]">Autres coûts liés</dt>
