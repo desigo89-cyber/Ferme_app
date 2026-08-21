@@ -20,6 +20,11 @@ body {
   scrollbar-width: none;
 }
 
+/* Titres : Bell MT (si disponible sur l'appareil), gras */
+.font-serif {
+  font-weight: 700;
+}
+
 /* Zones de sécurité (encoche, barre de gestes) */
 #root {
   padding-top: env(safe-area-inset-top);
