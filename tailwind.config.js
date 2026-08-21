@@ -4,7 +4,7 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        serif: ["Georgia", "Cambria", "'Times New Roman'", "serif"],
+        serif: ["'Bell MT'", "'Book Antiqua'", "Garamond", "Georgia", "Cambria", "'Times New Roman'", "serif"],
       },
     },
   },
