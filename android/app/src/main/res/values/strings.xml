@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">Gestion de Ferme</string>
-    <string name="title_activity_main">Gestion de Ferme</string>
+    <string name="app_name">SénèApp</string>
+    <string name="title_activity_main">SénèApp</string>
     <string name="package_name">com.maferme.gestion</string>
     <string name="custom_url_scheme">com.maferme.gestion</string>
 </resources>
