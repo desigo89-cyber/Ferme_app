@@ -1,6 +1,6 @@
 {
   "appId": "com.maferme.gestion",
-  "appName": "Gestion de Ferme",
+  "appName": "SénèApp",
   "webDir": "dist",
   "server": {
     "androidScheme": "https"
