@@ -2,13 +2,16 @@ import React, { useState, useEffect, useMemo } from "react";
 import {
   Sprout, PawPrint, Boxes, Wallet, ListChecks, LayoutDashboard,
   Plus, X, Trash2, AlertTriangle, Calendar, ChevronRight, Heart, Baby, Milk,
-  FileText, Landmark, Banknote, Smartphone, Lock, KeyRound, Eye, EyeOff, BarChart3, Package, TrendingUp, Settings
+  FileText, Landmark, Banknote, Smartphone, Lock, KeyRound, Eye, EyeOff, BarChart3, Package, TrendingUp, Settings,
+  Users, Share2, Palette, Image as ImageIcon, Coins, CalendarOff, UserCircle
 } from "lucide-react";
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
   PieChart, Pie, Cell, LineChart, Line
 } from "recharts";
 import { storage } from "./storage.js";
+import { partagerSauvegarde } from "./share.js";
+import * as sync from "./sync.js";
 
 // ---------- Design tokens ----------
 // bg (paper): #EFEAD9 | surface: #FFFFFF | ink: #232620 | muted: #6E6B58
@@ -21,7 +24,7 @@ const fmtDate = (d) => (d ? new Date(d).toLocaleDateString("fr-FR", { day: "2-di
 const STORAGE_KEY = "ferme-app-data-v1";
 
 const emptyState = {
-  ferme: { nom: "Ma Ferme" },
+  ferme: { nom: "Ma Ferme", logo: null, devise: "FCFA", theme: "vert" },
   parcelles: [],
   animaux: [],
   stocks: [],
@@ -31,6 +34,7 @@ const emptyState = {
   documents: [],
   mouvementsStock: [],
   produits: [],
+  employes: [],
   security: { password: null },
 };
 
@@ -46,6 +50,20 @@ const MODULE_LABELS = { cultures: "Cultures", elevage: "Élevage", stocks: "Stoc
 const COMPTE_ICONS = { banque: Landmark, caisse: Banknote, mobile_money: Smartphone };
 const COMPTE_LABELS = { banque: "Banque", caisse: "Caisse", mobile_money: "Mobile Money" };
 const DOC_LABELS = { recu: "Reçu", facture: "Facture", bordereau_reception: "Bordereau de réception", commande: "Commande" };
+
+const CONTRAT_LABELS = { cdi: "CDI", cdd: "CDD", stage: "Stage", essai: "Période d'essai", prestation: "Prestation" };
+const CHARGE_LABELS = { variable: "Charge variable", fixe: "Charge fixe", sociale: "Charge sociale", salariale: "Salaire", autre: "Autre" };
+const DEVISES = ["FCFA", "EUR", "USD", "GNF", "MAD", "CDF"];
+
+const THEMES = {
+  vert: { primary: "#2F3B2C", primaryDark: "#242E21", accent: "#C08A2E", accentDark: "#A9761F", bg: "#EFEAD9", nav: "#B9C4AE" },
+  bleu: { primary: "#1E3A5F", primaryDark: "#162C48", accent: "#3B82A0", accentDark: "#2F6A85", bg: "#E8EEF2", nav: "#A9C2D6" },
+  brun: { primary: "#4A342A", primaryDark: "#3A281F", accent: "#B5651D", accentDark: "#95511A", bg: "#F0E6DA", nav: "#C9AE97" },
+};
+
+function money(amount, devise) {
+  return `${Number(amount || 0).toLocaleString("fr-FR")} ${devise || "FCFA"}`;
+}
 
 // ---------- Small UI primitives ----------
 function Card({ children, className = "" }) {
@@ -74,8 +92,8 @@ function Badge({ children, tone = "default" }) {
 function Button({ children, onClick, variant = "primary", type = "button", className = "", disabled }) {
   const base = "inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-md text-sm font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed";
   const variants = {
-    primary: "bg-[#2F3B2C] text-[#F3EFE2] hover:bg-[#242E21]",
-    accent: "bg-[#C08A2E] text-white hover:bg-[#A9761F]",
+    primary: "bg-[var(--color-primary)] text-[#F3EFE2] hover:bg-[var(--color-primary-dark)]",
+    accent: "bg-[var(--color-accent)] text-white hover:bg-[var(--color-accent-dark)]",
     ghost: "bg-transparent text-[#2F3B2C] hover:bg-[#E9E3CF] border border-[#DFD8C2]",
     danger: "bg-transparent text-[#A6402A] hover:bg-[#F5DFDA] border border-[#E9BCB0]",
   };
@@ -189,8 +207,19 @@ export default function FarmApp() {
     { id: "comptes", label: "Comptes", icon: Landmark },
     { id: "documents", label: "Documents", icon: FileText },
     { id: "rapport", label: "Rapport", icon: BarChart3 },
+    { id: "personnel", label: "Personnel", icon: Users },
     { id: "taches", label: "Tâches", icon: ListChecks },
   ];
+
+  const theme = THEMES[data.ferme.theme] || THEMES.vert;
+  const themeVars = {
+    "--color-primary": theme.primary,
+    "--color-primary-dark": theme.primaryDark,
+    "--color-accent": theme.accent,
+    "--color-accent-dark": theme.accentDark,
+    "--color-bg": theme.bg,
+    "--color-nav": theme.nav,
+  };
 
   if (loading) {
     return (
@@ -211,12 +240,15 @@ export default function FarmApp() {
   }
 
   return (
-    <div className="min-h-screen bg-[#EFEAD9] text-[#232620]">
-      <header className="bg-[#2F3B2C] text-[#F3EFE2] px-4 sm:px-6 py-4">
+    <div className="min-h-screen bg-[var(--color-bg)] text-[#232620]" style={themeVars}>
+      <header className="bg-[var(--color-primary)] text-[#F3EFE2] px-4 sm:px-6 py-4">
         <div className="max-w-5xl mx-auto flex items-center justify-between">
-          <div>
-            <p className="text-[10px] uppercase tracking-widest text-[#B9C4AE]">Gestion de ferme</p>
-            <h1 className="font-serif text-xl sm:text-2xl">{data.ferme.nom}</h1>
+          <div className="flex items-center gap-3">
+            {data.ferme.logo && <img src={data.ferme.logo} alt="Logo" className="h-9 w-9 rounded-full object-cover bg-white" />}
+            <div>
+              <p className="text-[10px] uppercase tracking-widest text-[var(--color-nav)]">Gestion de ferme</p>
+              <h1 className="font-serif text-xl sm:text-2xl">{data.ferme.nom}</h1>
+            </div>
           </div>
           <div className="flex items-center gap-3">
             {saveError && (
@@ -224,7 +256,7 @@ export default function FarmApp() {
                 <AlertTriangle size={14} /> Sauvegarde impossible
               </span>
             )}
-            <button onClick={() => setShowSecurity(true)} className="text-[#B9C4AE] hover:text-white" title="Paramètres">
+            <button onClick={() => setShowSecurity(true)} className="text-[var(--color-nav)] hover:text-white" title="Paramètres">
               <Settings size={18} />
             </button>
           </div>
@@ -239,7 +271,7 @@ export default function FarmApp() {
         />
       )}
 
-      <nav className="bg-[#2F3B2C] border-t border-[#3E4A3A] sticky top-0 z-40">
+      <nav className="bg-[var(--color-primary)] border-t border-[#3E4A3A] sticky top-0 z-40">
         <div className="max-w-5xl mx-auto flex overflow-x-auto no-scrollbar px-2">
           {tabs.map((t) => {
             const Icon = t.icon;
@@ -249,7 +281,7 @@ export default function FarmApp() {
                 key={t.id}
                 onClick={() => setTab(t.id)}
                 className={`flex items-center gap-1.5 px-4 py-3 text-sm whitespace-nowrap border-b-2 transition-colors ${
-                  active ? "border-[#C08A2E] text-white" : "border-transparent text-[#B9C4AE] hover:text-white"
+                  active ? "border-[var(--color-accent)] text-white" : "border-transparent text-[var(--color-nav)] hover:text-white"
                 }`}
               >
                 <Icon size={16} />
@@ -270,6 +302,7 @@ export default function FarmApp() {
         {tab === "comptes" && <Comptes data={data} update={update} />}
         {tab === "documents" && <Documents data={data} update={update} />}
         {tab === "rapport" && <RapportMensuel data={data} />}
+        {tab === "personnel" && <Personnel data={data} update={update} />}
         {tab === "taches" && <Taches data={data} update={update} />}
       </main>
     </div>
@@ -327,14 +360,130 @@ function LockScreen({ nomFerme, password, onUnlock }) {
 function ParametresModal({ data, update, onClose }) {
   const hasPassword = !!data.security?.password;
   const [nomFerme, setNomFerme] = useState(data.ferme.nom);
+  const [devise, setDevise] = useState(data.ferme.devise || "FCFA");
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
   const [error, setError] = useState("");
   const [importError, setImportError] = useState("");
+  const [partageEnCours, setPartageEnCours] = useState(false);
+  const [logoError, setLogoError] = useState("");
+
+  const [cloudConfig, setCloudConfigState] = useState(null);
+  const [cloudUrl, setCloudUrl] = useState("");
+  const [cloudAnonKey, setCloudAnonKey] = useState("");
+  const [codeFerme, setCodeFerme] = useState("");
+  const [pin, setPin] = useState("");
+  const [cloudStatus, setCloudStatus] = useState("");
+  const [cloudError, setCloudError] = useState("");
+  const [cloudBusy, setCloudBusy] = useState(false);
+
+  useEffect(() => {
+    sync.getCloudConfig().then((cfg) => {
+      if (cfg) {
+        setCloudConfigState(cfg);
+        setCloudUrl(cfg.url); setCloudAnonKey(cfg.anonKey); setCodeFerme(cfg.codeFerme); setPin(cfg.pin);
+        setCloudStatus(`Connecté à l'espace cloud « ${cfg.codeFerme} »`);
+      }
+    });
+  }, []);
+
+  const buildConfig = () => ({ url: cloudUrl.trim(), anonKey: cloudAnonKey.trim(), codeFerme: codeFerme.trim(), pin: pin.trim() });
+
+  const creerEspace = async () => {
+    setCloudError(""); setCloudBusy(true);
+    try {
+      const cfg = buildConfig();
+      if (!cfg.url || !cfg.anonKey || !cfg.codeFerme || !cfg.pin) throw new Error("Remplissez tous les champs (URL, clé, code, PIN).");
+      await sync.creerEspaceCloud(cfg, data);
+      await sync.setCloudConfig(cfg);
+      setCloudConfigState(cfg);
+      setCloudStatus(`Espace cloud créé et connecté : « ${cfg.codeFerme} »`);
+    } catch (err) {
+      setCloudError(err.message || "Échec de la création de l'espace cloud.");
+    } finally {
+      setCloudBusy(false);
+    }
+  };
+
+  const rejoindreEspace = async () => {
+    setCloudError(""); setCloudBusy(true);
+    try {
+      const cfg = buildConfig();
+      if (!cfg.url || !cfg.anonKey || !cfg.codeFerme || !cfg.pin) throw new Error("Remplissez tous les champs (URL, clé, code, PIN).");
+      const result = await sync.rejoindreEspaceCloud(cfg);
+      if (!confirm("Rejoindre remplacera les données actuelles de cet appareil par celles du cloud. Continuer ?")) { setCloudBusy(false); return; }
+      update((d) => { Object.keys(emptyState).forEach((k) => { d[k] = result.data[k] ?? emptyState[k]; }); });
+      await sync.setCloudConfig(cfg);
+      setCloudConfigState(cfg);
+      setCloudStatus(`Connecté à l'espace cloud « ${cfg.codeFerme} » — données récupérées.`);
+    } catch (err) {
+      setCloudError(err.message || "Échec de la connexion à l'espace cloud.");
+    } finally {
+      setCloudBusy(false);
+    }
+  };
+
+  const envoyerCloud = async () => {
+    setCloudError(""); setCloudBusy(true);
+    try {
+      await sync.envoyerVersCloud(cloudConfig, data);
+      setCloudStatus(`Envoyé vers le cloud à ${new Date().toLocaleTimeString("fr-FR")}`);
+    } catch (err) {
+      setCloudError(err.message || "Échec de l'envoi.");
+    } finally {
+      setCloudBusy(false);
+    }
+  };
+
+  const recupererCloud = async () => {
+    setCloudError(""); setCloudBusy(true);
+    try {
+      const result = await sync.recupererDuCloud(cloudConfig);
+      if (!confirm("Récupérer remplacera les données actuelles de cet appareil par celles du cloud. Continuer ?")) { setCloudBusy(false); return; }
+      update((d) => { Object.keys(emptyState).forEach((k) => { d[k] = result.data[k] ?? emptyState[k]; }); });
+      setCloudStatus(`Données récupérées à ${new Date().toLocaleTimeString("fr-FR")}`);
+    } catch (err) {
+      setCloudError(err.message || "Échec de la récupération.");
+    } finally {
+      setCloudBusy(false);
+    }
+  };
+
+  const deconnecterCloud = async () => {
+    await sync.clearCloudConfig();
+    setCloudConfigState(null);
+    setCloudStatus("");
+  };
 
   const saveNom = () => {
     if (nomFerme.trim()) update((d) => { d.ferme.nom = nomFerme.trim(); });
   };
+
+  const saveDevise = (val) => {
+    setDevise(val);
+    update((d) => { d.ferme.devise = val; });
+  };
+
+  const saveTheme = (val) => {
+    update((d) => { d.ferme.theme = val; });
+  };
+
+  const uploadLogo = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 1024 * 1024) {
+      setLogoError("Image trop lourde (max 1 Mo). Choisissez une image plus légère.");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      update((d) => { d.ferme.logo = reader.result; });
+      setLogoError("");
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const removeLogo = () => update((d) => { d.ferme.logo = null; });
 
   const savePassword = (e) => {
     e.preventDefault();
@@ -392,6 +541,17 @@ function ParametresModal({ data, update, onClose }) {
     reader.readAsText(file);
   };
 
+  const partager = async () => {
+    setPartageEnCours(true);
+    try {
+      await partagerSauvegarde(data, `sauvegarde-${data.ferme.nom.replace(/\s+/g, "-").toLowerCase()}-${today()}.json`);
+    } catch (err) {
+      setImportError("Le partage a échoué. Réessayez ou utilisez le téléchargement.");
+    } finally {
+      setPartageEnCours(false);
+    }
+  };
+
   return (
     <Modal title="Paramètres" onClose={onClose}>
       <div className="space-y-6">
@@ -401,6 +561,86 @@ function ParametresModal({ data, update, onClose }) {
             <Input value={nomFerme} onChange={(e) => setNomFerme(e.target.value)} />
             <Button variant="ghost" onClick={saveNom}>Enregistrer</Button>
           </div>
+        </div>
+
+        <div className="border-t border-[#DFD8C2] pt-4">
+          <h4 className="text-sm font-medium mb-2 flex items-center gap-1.5"><ImageIcon size={14} /> Logo de la ferme</h4>
+          <div className="flex items-center gap-3">
+            {data.ferme.logo ? (
+              <img src={data.ferme.logo} alt="Logo" className="h-14 w-14 rounded-full object-cover border border-[#DFD8C2]" />
+            ) : (
+              <div className="h-14 w-14 rounded-full bg-[#EFEAD9] flex items-center justify-center text-[#8B8974]"><ImageIcon size={20} /></div>
+            )}
+            <div className="flex gap-2 flex-wrap">
+              <label className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-md text-sm font-medium border border-[#DFD8C2] text-[#2F3B2C] hover:bg-[#E9E3CF] cursor-pointer">
+                Changer le logo
+                <input type="file" accept="image/*" onChange={uploadLogo} className="hidden" />
+              </label>
+              {data.ferme.logo && <Button variant="danger" onClick={removeLogo}>Retirer</Button>}
+            </div>
+          </div>
+          {logoError && <p className="text-xs text-[#A6402A] mt-2">{logoError}</p>}
+        </div>
+
+        <div className="border-t border-[#DFD8C2] pt-4">
+          <h4 className="text-sm font-medium mb-2 flex items-center gap-1.5"><Coins size={14} /> Devise</h4>
+          <Select value={devise} onChange={(e) => saveDevise(e.target.value)}>
+            {DEVISES.map((dv) => <option key={dv} value={dv}>{dv}</option>)}
+          </Select>
+          <p className="text-xs text-[#8B8974] mt-1">S'applique à tous les montants affichés dans l'application.</p>
+        </div>
+
+        <div className="border-t border-[#DFD8C2] pt-4">
+          <h4 className="text-sm font-medium mb-2 flex items-center gap-1.5"><Palette size={14} /> Apparence de l'interface</h4>
+          <div className="flex gap-3">
+            {Object.entries(THEMES).map(([key, t]) => (
+              <button
+                key={key}
+                onClick={() => saveTheme(key)}
+                className={`flex flex-col items-center gap-1.5 p-2 rounded-lg border-2 ${data.ferme.theme === key ? "border-[var(--color-accent)]" : "border-transparent"}`}
+              >
+                <span className="flex h-8 w-8 rounded-full overflow-hidden border border-[#DFD8C2]">
+                  <span className="w-1/2 h-full" style={{ backgroundColor: t.primary }} />
+                  <span className="w-1/2 h-full" style={{ backgroundColor: t.accent }} />
+                </span>
+                <span className="text-xs capitalize">{key}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="border-t border-[#DFD8C2] pt-4">
+          <h4 className="text-sm font-medium mb-2 flex items-center gap-1.5"><Share2 size={14} /> Synchronisation multi-appareils (Cloud)</h4>
+          <p className="text-xs text-[#8B8974] mb-3">
+            Connectez plusieurs téléphones au même espace cloud pour qu'ils partagent les mêmes données. Nécessite un projet Supabase gratuit (voir les instructions fournies).
+          </p>
+
+          {cloudConfig ? (
+            <div className="space-y-3">
+              <p className="text-xs text-[#3C5A34]">{cloudStatus}</p>
+              <div className="flex gap-2 flex-wrap">
+                <Button variant="ghost" onClick={envoyerCloud} disabled={cloudBusy}>Envoyer vers le cloud</Button>
+                <Button variant="ghost" onClick={recupererCloud} disabled={cloudBusy}>Récupérer depuis le cloud</Button>
+                <Button variant="danger" onClick={deconnecterCloud} disabled={cloudBusy}>Se déconnecter</Button>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <Field label="URL du projet Supabase"><Input value={cloudUrl} onChange={(e) => setCloudUrl(e.target.value)} placeholder="https://xxxx.supabase.co" /></Field>
+              <Field label="Clé anonyme (anon key)"><Input value={cloudAnonKey} onChange={(e) => setCloudAnonKey(e.target.value)} placeholder="eyJhbGciOi..." /></Field>
+              <Field label="Code de la ferme"><Input value={codeFerme} onChange={(e) => setCodeFerme(e.target.value)} placeholder="Ex. ferme-tapokro" /></Field>
+              <Field label="Code PIN (secret, partagé entre vos appareils)"><Input type="password" value={pin} onChange={(e) => setPin(e.target.value)} /></Field>
+              {cloudStatus && <p className="text-xs text-[#3C5A34]">{cloudStatus}</p>}
+              <div className="flex gap-2 flex-wrap">
+                <Button variant="accent" onClick={creerEspace} disabled={cloudBusy}>Créer mon espace cloud</Button>
+                <Button variant="ghost" onClick={rejoindreEspace} disabled={cloudBusy}>Rejoindre un espace existant</Button>
+              </div>
+              <p className="text-xs text-[#8B8974]">
+                Premier appareil : « Créer mon espace cloud » (envoie les données actuelles). Appareils suivants : mêmes URL/clé/code/PIN, puis « Rejoindre un espace existant ».
+              </p>
+            </div>
+          )}
+          {cloudError && <p className="text-xs text-[#A6402A] mt-2">{cloudError}</p>}
         </div>
 
         <div className="border-t border-[#DFD8C2] pt-4">
@@ -425,6 +665,9 @@ function ParametresModal({ data, update, onClose }) {
           <p className="text-xs text-[#8B8974] mb-3">Téléchargez une copie de toutes vos données, ou restaurez une sauvegarde précédente. Recommandé régulièrement pour éviter toute perte.</p>
           <div className="flex gap-2 flex-wrap">
             <Button variant="ghost" onClick={exportData}>Télécharger la sauvegarde (.json)</Button>
+            <Button variant="ghost" onClick={partager} disabled={partageEnCours}>
+              <Share2 size={14} /> {partageEnCours ? "Partage..." : "Partager (cloud, WhatsApp, email...)"}
+            </Button>
             <label className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-md text-sm font-medium border border-[#DFD8C2] text-[#2F3B2C] hover:bg-[#E9E3CF] cursor-pointer">
               Restaurer une sauvegarde
               <input type="file" accept="application/json" onChange={importData} className="hidden" />
@@ -462,7 +705,7 @@ function Dashboard({ data, setTab }) {
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <StatCard label="Parcelles" value={data.parcelles.length} icon={Sprout} />
         <StatCard label="Animaux" value={data.animaux.length} icon={PawPrint} />
-        <StatCard label="Solde (FCFA)" value={(revenus - depenses).toLocaleString("fr-FR")} icon={Wallet} tone={revenus - depenses >= 0 ? "good" : "bad"} />
+        <StatCard label="Solde" value={money(revenus - depenses, data.ferme.devise)} icon={Wallet} tone={revenus - depenses >= 0 ? "good" : "bad"} />
         <StatCard label="Tâches ouvertes" value={data.taches.filter((t) => t.statut !== "termine").length} icon={ListChecks} />
       </div>
 
@@ -1145,9 +1388,9 @@ function Finances({ data, update }) {
       </div>
 
       <div className="grid grid-cols-3 gap-3">
-        <StatCard label="Revenus" value={revenus.toLocaleString("fr-FR")} icon={Wallet} tone="good" />
-        <StatCard label="Dépenses" value={depenses.toLocaleString("fr-FR")} icon={Wallet} tone="bad" />
-        <StatCard label="Solde" value={(revenus - depenses).toLocaleString("fr-FR")} icon={Wallet} tone={revenus - depenses >= 0 ? "good" : "bad"} />
+        <StatCard label="Revenus" value={money(revenus, data.ferme.devise)} icon={Wallet} tone="good" />
+        <StatCard label="Dépenses" value={money(depenses, data.ferme.devise)} icon={Wallet} tone="bad" />
+        <StatCard label="Solde" value={money(revenus - depenses, data.ferme.devise)} icon={Wallet} tone={revenus - depenses >= 0 ? "good" : "bad"} />
       </div>
 
       {data.transactions.length === 0 ? (
@@ -1177,6 +1420,8 @@ function Finances({ data, update }) {
           <TransactionForm
             comptes={data.comptes}
             produits={data.produits}
+            employes={data.employes}
+            devise={data.ferme.devise}
             onSubmit={(vals) => {
               update((d) => d.transactions.push({ id: uid(), ...vals }));
               setShowAdd(false);
@@ -1188,7 +1433,7 @@ function Finances({ data, update }) {
   );
 }
 
-function TransactionForm({ onSubmit, comptes = [], produits = [] }) {
+function TransactionForm({ onSubmit, comptes = [], produits = [], employes = [], devise = "FCFA" }) {
   const [type, setType] = useState("depense");
   const [categorie, setCategorie] = useState("");
   const [montant, setMontant] = useState("");
@@ -1197,8 +1442,10 @@ function TransactionForm({ onSubmit, comptes = [], produits = [] }) {
   const [compteId, setCompteId] = useState("");
   const [produitId, setProduitId] = useState("");
   const [quantite, setQuantite] = useState("");
+  const [typeCharge, setTypeCharge] = useState("variable");
+  const [employeId, setEmployeId] = useState("");
   return (
-    <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); if (!montant) return; onSubmit({ type, categorie, montant, date, description, compteId: compteId || null, produitId: produitId || null, quantite: quantite || null }); }}>
+    <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); if (!montant) return; onSubmit({ type, categorie, montant, date, description, compteId: compteId || null, produitId: produitId || null, quantite: quantite || null, typeCharge: type === "depense" ? typeCharge : null, employeId: employeId || null }); }}>
       <Field label="Type">
         <Select value={type} onChange={(e) => setType(e.target.value)}>
           <option value="depense">Dépense</option>
@@ -1206,8 +1453,27 @@ function TransactionForm({ onSubmit, comptes = [], produits = [] }) {
         </Select>
       </Field>
       <Field label="Catégorie"><Input value={categorie} onChange={(e) => setCategorie(e.target.value)} placeholder="Ex. Vente lait, Achat semence" /></Field>
-      <Field label="Montant (FCFA)"><Input type="number" step="0.01" value={montant} onChange={(e) => setMontant(e.target.value)} required /></Field>
+      <Field label={`Montant (${devise})`}><Input type="number" step="0.01" value={montant} onChange={(e) => setMontant(e.target.value)} required /></Field>
       <Field label="Date"><Input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></Field>
+      {type === "depense" && (
+        <Field label="Type de charge">
+          <Select value={typeCharge} onChange={(e) => setTypeCharge(e.target.value)}>
+            <option value="variable">Charge variable (intrants, alimentation...)</option>
+            <option value="fixe">Charge fixe (loyer, assurance...)</option>
+            <option value="sociale">Charge sociale (cotisations)</option>
+            <option value="salariale">Salaire</option>
+            <option value="autre">Autre</option>
+          </Select>
+        </Field>
+      )}
+      {type === "depense" && (typeCharge === "salariale" || typeCharge === "sociale") && (
+        <Field label="Employé concerné">
+          <Select value={employeId} onChange={(e) => setEmployeId(e.target.value)}>
+            <option value="">Aucun</option>
+            {employes.map((emp) => <option key={emp.id} value={emp.id}>{emp.nom}</option>)}
+          </Select>
+        </Field>
+      )}
       <Field label="Moyen de paiement">
         <Select value={compteId} onChange={(e) => setCompteId(e.target.value)}>
           <option value="">Espèces (non rattaché)</option>
@@ -1370,7 +1636,7 @@ function Comptes({ data, update }) {
                   </button>
                 </div>
                 <p className={`font-serif text-2xl mt-3 ${solde >= 0 ? "text-[#3C5A34]" : "text-[#A6402A]"}`}>
-                  {solde.toLocaleString("fr-FR")} <span className="text-sm font-sans text-[#8B8974]">FCFA</span>
+                  {money(solde, data.ferme.devise)}
                 </p>
                 <Button variant="ghost" className="mt-3 w-full" onClick={() => setSelected(c.id)}>Voir les mouvements</Button>
               </Card>
@@ -1481,9 +1747,16 @@ function Documents({ data, update }) {
                     + {doc.quantiteRecue} {data.stocks.find((s) => s.id === doc.stockId)?.unite} → {data.stocks.find((s) => s.id === doc.stockId)?.nom}
                   </p>
                 )}
+                {doc.lignes && doc.lignes.length > 0 && (
+                  <ul className="mt-1 text-xs text-[#8B8974] space-y-0.5">
+                    {doc.lignes.map((l) => (
+                      <li key={l.id}>{l.produit || "?"} — {l.quantite} × {money(l.prixUnitaire, data.ferme.devise)}</li>
+                    ))}
+                  </ul>
+                )}
               </div>
               <div className="flex items-center gap-3 shrink-0">
-                {doc.montant && <span className="font-medium">{Number(doc.montant).toLocaleString("fr-FR")}</span>}
+                {doc.montant && <span className="font-medium">{money(doc.montant, data.ferme.devise)}</span>}
                 <Badge tone={doc.statut === "paye" ? "good" : doc.statut === "valide" ? "accent" : "default"}>
                   {{ en_attente: "En attente", valide: "Validé", paye: "Payé" }[doc.statut] || doc.statut}
                 </Badge>
@@ -1500,6 +1773,8 @@ function Documents({ data, update }) {
         <Modal title="Nouveau document" onClose={() => setShowAdd(false)}>
           <DocumentForm
             stocks={data.stocks}
+            produits={data.produits}
+            devise={data.ferme.devise}
             onSubmit={(vals) => {
               update((d) => {
                 d.documents.push({ id: uid(), ...vals });
@@ -1518,7 +1793,7 @@ function Documents({ data, update }) {
   );
 }
 
-function DocumentForm({ onSubmit, stocks = [] }) {
+function DocumentForm({ onSubmit, stocks = [], produits = [], devise = "FCFA" }) {
   const [type, setType] = useState("recu");
   const [numero, setNumero] = useState("");
   const [date, setDate] = useState(today());
@@ -1528,8 +1803,21 @@ function DocumentForm({ onSubmit, stocks = [] }) {
   const [notes, setNotes] = useState("");
   const [stockId, setStockId] = useState("");
   const [quantiteRecue, setQuantiteRecue] = useState("");
+  const [lignes, setLignes] = useState([]);
+
+  const showLignes = type === "facture" || type === "commande";
+  const totalLignes = lignes.reduce((s, l) => s + Number(l.quantite || 0) * Number(l.prixUnitaire || 0), 0);
+
+  const addLigne = () => setLignes((ls) => [...ls, { id: uid(), produit: "", quantite: "", prixUnitaire: "" }]);
+  const updateLigne = (id, field, value) => setLignes((ls) => ls.map((l) => (l.id === id ? { ...l, [field]: value } : l)));
+  const removeLigne = (id) => setLignes((ls) => ls.filter((l) => l.id !== id));
+
   return (
-    <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); onSubmit({ type, numero, date, tiers, montant, statut, notes, stockId: stockId || null, quantiteRecue: quantiteRecue || null }); }}>
+    <form className="space-y-3" onSubmit={(e) => {
+      e.preventDefault();
+      const montantFinal = showLignes && lignes.length > 0 ? totalLignes : montant;
+      onSubmit({ type, numero, date, tiers, montant: montantFinal, statut, notes, stockId: stockId || null, quantiteRecue: quantiteRecue || null, lignes: showLignes ? lignes : [] });
+    }}>
       <Field label="Type de document">
         <Select value={type} onChange={(e) => setType(e.target.value)}>
           <option value="recu">Reçu</option>
@@ -1541,7 +1829,43 @@ function DocumentForm({ onSubmit, stocks = [] }) {
       <Field label="Numéro"><Input value={numero} onChange={(e) => setNumero(e.target.value)} placeholder="Ex. FA-2026-014" /></Field>
       <Field label="Date"><Input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></Field>
       <Field label="Fournisseur / Client"><Input value={tiers} onChange={(e) => setTiers(e.target.value)} /></Field>
-      <Field label="Montant (FCFA)"><Input type="number" step="0.01" value={montant} onChange={(e) => setMontant(e.target.value)} /></Field>
+
+      {showLignes && (
+        <div className="rounded-md border border-[#DFD8C2] bg-[#FBF9F2] p-3 space-y-3">
+          <p className="text-xs text-[#6E6B58]">Détail des produits — le montant total se calcule automatiquement.</p>
+          {lignes.map((l) => (
+            <div key={l.id} className="grid grid-cols-[1fr_1fr] sm:grid-cols-[2fr_1fr_1fr_auto] gap-2 items-end">
+              <Field label="Produit">
+                <Input list="produits-liste" value={l.produit} onChange={(e) => updateLigne(l.id, "produit", e.target.value)} placeholder="Ex. Semence de maïs" />
+              </Field>
+              <Field label="Quantité">
+                <Input type="number" step="0.01" value={l.quantite} onChange={(e) => updateLigne(l.id, "quantite", e.target.value)} />
+              </Field>
+              <Field label="Prix unitaire">
+                <Input type="number" step="0.01" value={l.prixUnitaire} onChange={(e) => updateLigne(l.id, "prixUnitaire", e.target.value)} />
+              </Field>
+              <div className="flex items-center gap-2 pb-2">
+                <span className="text-xs text-[#8B8974] whitespace-nowrap">{money(Number(l.quantite || 0) * Number(l.prixUnitaire || 0), devise)}</span>
+                <button type="button" onClick={() => removeLigne(l.id)} className="text-[#C7C2A8] hover:text-[#A6402A]"><Trash2 size={14} /></button>
+              </div>
+            </div>
+          ))}
+          <datalist id="produits-liste">
+            {produits.map((p) => <option key={p.id} value={p.nom} />)}
+          </datalist>
+          <Button type="button" variant="ghost" onClick={addLigne}><Plus size={14} /> Ajouter une ligne</Button>
+          {lignes.length > 0 && (
+            <div className="flex justify-between border-t border-[#DFD8C2] pt-2 text-sm font-medium">
+              <span>Total</span>
+              <span>{money(totalLignes, devise)}</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {!(showLignes && lignes.length > 0) && (
+        <Field label={`Montant (${devise})`}><Input type="number" step="0.01" value={montant} onChange={(e) => setMontant(e.target.value)} /></Field>
+      )}
 
       {type === "bordereau_reception" && (
         <div className="rounded-md border border-[#EAD3A0] bg-[#F7E9D2] p-3 space-y-3">
@@ -1602,6 +1926,21 @@ function RapportMensuel({ data }) {
       else map[y].depenses += Number(t.montant || 0);
     });
     return Object.values(map).sort((a, b) => a.annee.localeCompare(b.annee));
+  }, [data.transactions]);
+
+  // ---- Marge brute & charges (toute la période) ----
+  const chargesEtMarge = useMemo(() => {
+    const ca = data.transactions.filter((t) => t.type === "revenu").reduce((s, t) => s + Number(t.montant || 0), 0);
+    const parType = { variable: 0, fixe: 0, sociale: 0, salariale: 0, autre: 0 };
+    data.transactions.filter((t) => t.type === "depense").forEach((t) => {
+      const key = t.typeCharge && parType.hasOwnProperty(t.typeCharge) ? t.typeCharge : "autre";
+      parType[key] += Number(t.montant || 0);
+    });
+    const chargesVariables = parType.variable;
+    const margeBrute = ca - chargesVariables;
+    const autresCharges = parType.fixe + parType.sociale + parType.salariale + parType.autre;
+    const resultatNet = margeBrute - autresCharges;
+    return { ca, parType, chargesVariables, margeBrute, autresCharges, resultatNet };
   }, [data.transactions]);
 
   const transactionsMois = data.transactions.filter((t) => inMonth(t.date));
@@ -1712,6 +2051,37 @@ function RapportMensuel({ data }) {
         </div>
       )}
 
+      {chargesEtMarge.ca > 0 && (
+        <Card className="p-4">
+          <h3 className="font-serif text-base mb-3">Marge brute & charges (toute la période)</h3>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+            <div>
+              <p className="text-xs text-[#8B8974]">Chiffre d'affaires</p>
+              <p className="font-serif text-lg">{money(chargesEtMarge.ca, data.ferme.devise)}</p>
+            </div>
+            <div>
+              <p className="text-xs text-[#8B8974]">Charges variables</p>
+              <p className="font-serif text-lg text-[#A6402A]">{money(chargesEtMarge.chargesVariables, data.ferme.devise)}</p>
+            </div>
+            <div>
+              <p className="text-xs text-[#8B8974]">Marge brute</p>
+              <p className={`font-serif text-lg ${chargesEtMarge.margeBrute >= 0 ? "text-[#3C5A34]" : "text-[#A6402A]"}`}>{money(chargesEtMarge.margeBrute, data.ferme.devise)}</p>
+            </div>
+            <div>
+              <p className="text-xs text-[#8B8974]">Résultat net</p>
+              <p className={`font-serif text-lg ${chargesEtMarge.resultatNet >= 0 ? "text-[#3C5A34]" : "text-[#A6402A]"}`}>{money(chargesEtMarge.resultatNet, data.ferme.devise)}</p>
+            </div>
+          </div>
+          <div className="text-sm space-y-1 border-t border-[#EFEAD9] pt-3">
+            <div className="flex justify-between"><span className="text-[#8B8974]">Charges fixes</span><span>{money(chargesEtMarge.parType.fixe, data.ferme.devise)}</span></div>
+            <div className="flex justify-between"><span className="text-[#8B8974]">Charges sociales</span><span>{money(chargesEtMarge.parType.sociale, data.ferme.devise)}</span></div>
+            <div className="flex justify-between"><span className="text-[#8B8974]">Salaires</span><span>{money(chargesEtMarge.parType.salariale, data.ferme.devise)}</span></div>
+            <div className="flex justify-between"><span className="text-[#8B8974]">Autres charges</span><span>{money(chargesEtMarge.parType.autre, data.ferme.devise)}</span></div>
+          </div>
+          <p className="text-xs text-[#8B8974] mt-3">Marge brute = chiffre d'affaires − charges variables. Résultat net = marge brute − charges fixes, sociales, salaires et autres. Le type de charge se choisit lors de la création d'une dépense dans Finances.</p>
+        </Card>
+      )}
+
       <div className="border-t border-[#DFD8C2] pt-6 space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <h2 className="font-serif text-xl capitalize">Rapport mensuel — {moisLabel}</h2>
@@ -1720,9 +2090,9 @@ function RapportMensuel({ data }) {
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <StatCard label="Mouvements du mois" value={totalMouvements} icon={BarChart3} />
-        <StatCard label="Revenus" value={revenus.toLocaleString("fr-FR")} icon={Wallet} tone="good" />
-        <StatCard label="Dépenses" value={depenses.toLocaleString("fr-FR")} icon={Wallet} tone="bad" />
-        <StatCard label="Solde du mois" value={(revenus - depenses).toLocaleString("fr-FR")} icon={Wallet} tone={revenus - depenses >= 0 ? "good" : "bad"} />
+        <StatCard label="Revenus" value={money(revenus, data.ferme.devise)} icon={Wallet} tone="good" />
+        <StatCard label="Dépenses" value={money(depenses, data.ferme.devise)} icon={Wallet} tone="bad" />
+        <StatCard label="Solde du mois" value={money(revenus - depenses, data.ferme.devise)} icon={Wallet} tone={revenus - depenses >= 0 ? "good" : "bad"} />
       </div>
 
       {totalMouvements === 0 ? (
@@ -1876,7 +2246,7 @@ function Produits({ data, update }) {
                 <div className="flex items-center justify-between">
                   <div>
                     <h3 className="font-medium">{p.nom}</h3>
-                    <p className="text-xs text-[#8B8974]">Coût de production : {Number(p.coutProductionUnitaire || 0).toLocaleString("fr-FR")} FCFA / {p.unite}</p>
+                    <p className="text-xs text-[#8B8974]">Coût de production : {money(p.coutProductionUnitaire, data.ferme.devise)} / {p.unite}</p>
                   </div>
                   <div className="flex items-center gap-2">
                     <button onClick={() => setEditing(p.id)} className="text-[#8B5E3C] text-xs">Modifier</button>
@@ -1887,17 +2257,17 @@ function Produits({ data, update }) {
                 </div>
                 <dl className="mt-3 grid grid-cols-2 gap-y-1 text-sm">
                   <dt className="text-[#8B8974]">Chiffre d'affaires</dt>
-                  <dd className="text-right font-medium">{p.chiffreAffaires.toLocaleString("fr-FR")}</dd>
+                  <dd className="text-right font-medium">{money(p.chiffreAffaires, data.ferme.devise)}</dd>
                   <dt className="text-[#8B8974]">Quantité vendue</dt>
                   <dd className="text-right">{p.quantiteVendue.toLocaleString("fr-FR")} {p.unite}</dd>
                   <dt className="text-[#8B8974]">Coût de production</dt>
-                  <dd className="text-right">{p.coutProduction.toLocaleString("fr-FR")}</dd>
+                  <dd className="text-right">{money(p.coutProduction, data.ferme.devise)}</dd>
                   <dt className="text-[#8B8974]">Autres coûts liés</dt>
-                  <dd className="text-right">{p.autresCouts.toLocaleString("fr-FR")}</dd>
+                  <dd className="text-right">{money(p.autresCouts, data.ferme.devise)}</dd>
                   <dt className="text-[#8B8974] font-medium">Coût total</dt>
-                  <dd className="text-right font-medium">{p.coutTotal.toLocaleString("fr-FR")}</dd>
+                  <dd className="text-right font-medium">{money(p.coutTotal, data.ferme.devise)}</dd>
                   <dt className={`font-medium ${p.benefice >= 0 ? "text-[#3C5A34]" : "text-[#A6402A]"}`}>Bénéfice</dt>
-                  <dd className={`text-right font-medium ${p.benefice >= 0 ? "text-[#3C5A34]" : "text-[#A6402A]"}`}>{p.benefice.toLocaleString("fr-FR")}</dd>
+                  <dd className={`text-right font-medium ${p.benefice >= 0 ? "text-[#3C5A34]" : "text-[#A6402A]"}`}>{money(p.benefice, data.ferme.devise)}</dd>
                 </dl>
               </Card>
             ))}
@@ -1941,6 +2311,273 @@ function ProduitForm({ onSubmit, initial }) {
         Ce coût unitaire (intrants, alimentation, main-d'œuvre estimée...) sera multiplié par la quantité vendue pour calculer le coût de production total. Liez vos ventes à ce produit dans Finances pour que les calculs se fassent automatiquement.
       </p>
       <Button type="submit" variant="accent" className="w-full">{initial ? "Mettre à jour" : "Créer le produit"}</Button>
+    </form>
+  );
+}
+
+// ============================================================
+// PERSONNEL (liste, contrats, salaires, congés)
+// ============================================================
+function Personnel({ data, update }) {
+  const [showAdd, setShowAdd] = useState(false);
+  const [selected, setSelected] = useState(null);
+  const employe = data.employes.find((e) => e.id === selected);
+
+  if (employe) return <EmployeDetail employe={employe} data={data} update={update} onBack={() => setSelected(null)} />;
+
+  const masseSalarialeMensuelle = data.employes
+    .filter((e) => e.statut === "actif")
+    .reduce((s, e) => s + Number(e.salaireMensuel || 0), 0);
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h2 className="font-serif text-xl">Personnel</h2>
+        <Button variant="accent" onClick={() => setShowAdd(true)}><Plus size={16} /> Nouvel employé</Button>
+      </div>
+
+      {data.employes.length > 0 && (
+        <Card className="p-4">
+          <p className="text-xs text-[#8B8974]">Masse salariale mensuelle (employés actifs)</p>
+          <p className="font-serif text-2xl">{money(masseSalarialeMensuelle, data.ferme.devise)}</p>
+        </Card>
+      )}
+
+      {data.employes.length === 0 ? (
+        <EmptyState icon={Users} text="Aucun employé enregistré." action={<Button variant="ghost" onClick={() => setShowAdd(true)}>Ajouter un employé</Button>} />
+      ) : (
+        <div className="grid sm:grid-cols-2 gap-3">
+          {data.employes.map((e) => {
+            const congesEnCours = (e.conges || []).filter((c) => c.statut === "en_cours" || (c.dateDebut <= today() && c.dateFin >= today()));
+            return (
+              <Card key={e.id} className="p-4 cursor-pointer hover:border-[var(--color-accent)]" onClick={() => setSelected(e.id)}>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <UserCircle size={20} className="text-[#8B5E3C]" />
+                    <div>
+                      <h3 className="font-medium">{e.nom}</h3>
+                      <p className="text-xs text-[#8B8974]">{e.poste || "Poste non précisé"}</p>
+                    </div>
+                  </div>
+                  <ChevronRight size={16} className="text-[#C7C2A8]" />
+                </div>
+                <div className="flex items-center gap-2 mt-3 flex-wrap">
+                  <Badge tone="accent">{CONTRAT_LABELS[e.typeContrat] || e.typeContrat}</Badge>
+                  <Badge tone={e.statut === "actif" ? "good" : "default"}>{e.statut === "actif" ? "Actif" : "Inactif"}</Badge>
+                  {congesEnCours.length > 0 && <Badge tone="warn">En congé</Badge>}
+                </div>
+                <p className="text-sm mt-2">{money(e.salaireMensuel, data.ferme.devise)} / mois</p>
+              </Card>
+            );
+          })}
+        </div>
+      )}
+
+      {showAdd && (
+        <Modal title="Nouvel employé" onClose={() => setShowAdd(false)}>
+          <EmployeForm
+            onSubmit={(vals) => {
+              update((d) => d.employes.push({ id: uid(), ...vals, conges: [] }));
+              setShowAdd(false);
+            }}
+          />
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+function EmployeForm({ onSubmit, initial }) {
+  const [nom, setNom] = useState(initial?.nom || "");
+  const [poste, setPoste] = useState(initial?.poste || "");
+  const [typeContrat, setTypeContrat] = useState(initial?.typeContrat || "cdi");
+  const [salaireMensuel, setSalaireMensuel] = useState(initial?.salaireMensuel ?? "");
+  const [dateDebut, setDateDebut] = useState(initial?.dateDebut || today());
+  const [dateFin, setDateFin] = useState(initial?.dateFin || "");
+  const [statut, setStatut] = useState(initial?.statut || "actif");
+  const [telephone, setTelephone] = useState(initial?.telephone || "");
+  return (
+    <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); if (!nom) return; onSubmit({ nom, poste, typeContrat, salaireMensuel: salaireMensuel || 0, dateDebut, dateFin: dateFin || null, statut, telephone }); }}>
+      <Field label="Nom complet"><Input value={nom} onChange={(e) => setNom(e.target.value)} required /></Field>
+      <Field label="Poste"><Input value={poste} onChange={(e) => setPoste(e.target.value)} placeholder="Ex. Ouvrier agricole, Vacher..." /></Field>
+      <Field label="Téléphone"><Input value={telephone} onChange={(e) => setTelephone(e.target.value)} /></Field>
+      <Field label="Type de contrat">
+        <Select value={typeContrat} onChange={(e) => setTypeContrat(e.target.value)}>
+          <option value="cdi">CDI</option>
+          <option value="cdd">CDD</option>
+          <option value="stage">Stage</option>
+          <option value="essai">Période d'essai</option>
+          <option value="prestation">Prestation</option>
+        </Select>
+      </Field>
+      <Field label="Salaire mensuel"><Input type="number" step="0.01" value={salaireMensuel} onChange={(e) => setSalaireMensuel(e.target.value)} /></Field>
+      <Field label="Date de début"><Input type="date" value={dateDebut} onChange={(e) => setDateDebut(e.target.value)} /></Field>
+      {(typeContrat === "cdd" || typeContrat === "stage" || typeContrat === "essai" || typeContrat === "prestation") && (
+        <Field label="Date de fin"><Input type="date" value={dateFin} onChange={(e) => setDateFin(e.target.value)} /></Field>
+      )}
+      <Field label="Statut">
+        <Select value={statut} onChange={(e) => setStatut(e.target.value)}>
+          <option value="actif">Actif</option>
+          <option value="inactif">Inactif</option>
+        </Select>
+      </Field>
+      <Button type="submit" variant="accent" className="w-full">{initial ? "Mettre à jour" : "Ajouter l'employé"}</Button>
+    </form>
+  );
+}
+
+function EmployeDetail({ employe, data, update, onBack }) {
+  const [showEdit, setShowEdit] = useState(false);
+  const [showConge, setShowConge] = useState(false);
+  const [showPaie, setShowPaie] = useState(false);
+
+  const paiements = data.transactions.filter((t) => t.employeId === employe.id && t.typeCharge === "salariale").sort((a, b) => b.date.localeCompare(a.date));
+
+  return (
+    <div className="space-y-4">
+      <button onClick={onBack} className="text-sm text-[#8B5E3C] flex items-center gap-1">← Retour au personnel</button>
+
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="font-serif text-xl">{employe.nom}</h2>
+          <p className="text-xs text-[#8B8974]">{employe.poste || "Poste non précisé"} {employe.telephone && `· ${employe.telephone}`}</p>
+          <div className="flex items-center gap-2 mt-2">
+            <Badge tone="accent">{CONTRAT_LABELS[employe.typeContrat]}</Badge>
+            <Badge tone={employe.statut === "actif" ? "good" : "default"}>{employe.statut === "actif" ? "Actif" : "Inactif"}</Badge>
+          </div>
+          <p className="text-xs text-[#8B8974] mt-1">
+            Depuis {fmtDate(employe.dateDebut)}{employe.dateFin ? ` — jusqu'au ${fmtDate(employe.dateFin)}` : ""}
+          </p>
+        </div>
+        <button onClick={() => setShowEdit(true)} className="text-[#8B5E3C] text-xs">Modifier</button>
+      </div>
+
+      <Card className="p-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-xs text-[#8B8974]">Salaire mensuel</p>
+            <p className="font-serif text-xl">{money(employe.salaireMensuel, data.ferme.devise)}</p>
+          </div>
+          <Button variant="accent" onClick={() => setShowPaie(true)}>Enregistrer un paiement</Button>
+        </div>
+        {paiements.length > 0 && (
+          <ul className="mt-3 space-y-1 text-sm border-t border-[#EFEAD9] pt-2">
+            {paiements.slice(0, 6).map((p) => (
+              <li key={p.id} className="flex justify-between">
+                <span>{p.description || "Salaire"}</span>
+                <span className="text-[#8B8974]">{money(p.montant, data.ferme.devise)} · {fmtDate(p.date)}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
+
+      <Card className="p-4">
+        <SectionTitle icon={CalendarOff} title="Congés" onClick={() => setShowConge(true)} />
+        {(!employe.conges || employe.conges.length === 0) ? (
+          <p className="text-sm text-[#8B8974] mt-2">Aucun congé enregistré.</p>
+        ) : (
+          <ul className="mt-2 space-y-1 text-sm">
+            {[...employe.conges].reverse().map((c) => (
+              <li key={c.id} className="flex justify-between border-b border-[#EFEAD9] pb-1">
+                <span>{{ paye: "Congé payé", maladie: "Congé maladie", sans_solde: "Sans solde" }[c.type] || c.type}</span>
+                <span className="text-[#8B8974]">{fmtDate(c.dateDebut)} → {fmtDate(c.dateFin)}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+        <Button variant="ghost" className="mt-3" onClick={() => setShowConge(true)}><Plus size={14} /> Ajouter un congé</Button>
+      </Card>
+
+      {showEdit && (
+        <Modal title="Modifier l'employé" onClose={() => setShowEdit(false)}>
+          <EmployeForm
+            initial={employe}
+            onSubmit={(vals) => {
+              update((d) => { const e = d.employes.find((x) => x.id === employe.id); Object.assign(e, vals); });
+              setShowEdit(false);
+            }}
+          />
+        </Modal>
+      )}
+
+      {showConge && (
+        <Modal title="Nouveau congé" onClose={() => setShowConge(false)}>
+          <CongeForm
+            onSubmit={(vals) => {
+              update((d) => { const e = d.employes.find((x) => x.id === employe.id); e.conges = e.conges || []; e.conges.push({ id: uid(), ...vals }); });
+              setShowConge(false);
+            }}
+          />
+        </Modal>
+      )}
+
+      {showPaie && (
+        <Modal title="Enregistrer un paiement de salaire" onClose={() => setShowPaie(false)}>
+          <PaieForm
+            comptes={data.comptes}
+            salaireDefaut={employe.salaireMensuel}
+            onSubmit={(vals) => {
+              update((d) => {
+                d.transactions.push({
+                  id: uid(),
+                  type: "depense",
+                  categorie: "Salaire",
+                  montant: vals.montant,
+                  date: vals.date,
+                  description: `Salaire — ${employe.nom}`,
+                  compteId: vals.compteId || null,
+                  typeCharge: "salariale",
+                  employeId: employe.id,
+                  produitId: null,
+                  quantite: null,
+                });
+              });
+              setShowPaie(false);
+            }}
+          />
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+function CongeForm({ onSubmit }) {
+  const [type, setType] = useState("paye");
+  const [dateDebut, setDateDebut] = useState(today());
+  const [dateFin, setDateFin] = useState(today());
+  const [statut, setStatut] = useState("planifie");
+  return (
+    <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); onSubmit({ type, dateDebut, dateFin, statut }); }}>
+      <Field label="Type de congé">
+        <Select value={type} onChange={(e) => setType(e.target.value)}>
+          <option value="paye">Congé payé</option>
+          <option value="maladie">Congé maladie</option>
+          <option value="sans_solde">Sans solde</option>
+        </Select>
+      </Field>
+      <Field label="Date de début"><Input type="date" value={dateDebut} onChange={(e) => setDateDebut(e.target.value)} /></Field>
+      <Field label="Date de fin"><Input type="date" value={dateFin} onChange={(e) => setDateFin(e.target.value)} /></Field>
+      <Button type="submit" variant="accent" className="w-full">Enregistrer</Button>
+    </form>
+  );
+}
+
+function PaieForm({ onSubmit, comptes, salaireDefaut }) {
+  const [montant, setMontant] = useState(salaireDefaut || "");
+  const [date, setDate] = useState(today());
+  const [compteId, setCompteId] = useState("");
+  return (
+    <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); if (!montant) return; onSubmit({ montant, date, compteId }); }}>
+      <Field label="Montant versé"><Input type="number" step="0.01" value={montant} onChange={(e) => setMontant(e.target.value)} required /></Field>
+      <Field label="Date"><Input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></Field>
+      <Field label="Moyen de paiement">
+        <Select value={compteId} onChange={(e) => setCompteId(e.target.value)}>
+          <option value="">Espèces (non rattaché)</option>
+          {comptes.map((c) => <option key={c.id} value={c.id}>{COMPTE_LABELS[c.type]} — {c.nom}</option>)}
+        </Select>
+      </Field>
+      <Button type="submit" variant="accent" className="w-full">Enregistrer le paiement</Button>
     </form>
   );
 }

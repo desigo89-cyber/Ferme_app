@@ -1,5 +1,53 @@
 # Gestion de Ferme — application mobile (Capacitor)
 
+## Nouveau : version web (accessible depuis un navigateur, synchronisée)
+
+Le même code sert maintenant de vrai site web, hébergé gratuitement sur
+GitHub Pages, et connecté au **même espace cloud** que l'app mobile (avec
+le même code de ferme + PIN dans Paramètres) — donc les données se
+synchronisent entre le site et le téléphone.
+
+**Activation (une seule fois) :**
+1. Sur GitHub, allez dans **Settings** (du dépôt `Ferme_app`) → **Pages** (menu de gauche)
+2. Sous "Build and deployment" → **Source** : choisissez **"GitHub Actions"**
+3. Envoyez ce projet mis à jour (voir plus bas) — un nouveau workflow **"Deploy Web"** se déclenche automatiquement dans l'onglet Actions
+4. Une fois terminé (✅, quelques minutes), le site est disponible à :
+   **`https://desigo89-cyber.github.io/Ferme_app/`**
+
+**Pour rester synchronisé avec le téléphone** : ouvrez le site → Paramètres (⚙️) → section Cloud → entrez la même URL Supabase / clé / code de ferme / PIN que sur le téléphone → "Rejoindre un espace existant". Ensuite, utilisez "Envoyer vers le cloud" / "Récupérer depuis le cloud" des deux côtés pour synchroniser (ce n'est pas automatique en temps réel — voir les explications précédentes).
+
+---
+
+## Nouveau : synchronisation multi-appareils (Cloud)
+
+Pour que plusieurs téléphones partagent les mêmes données, il faut créer un
+projet Supabase gratuit (une base de données en ligne) — une seule fois.
+
+**1. Créer le projet Supabase**
+- Allez sur [supabase.com](https://supabase.com) → "Start your project" → connectez-vous (Google ou email)
+- "New project" → donnez-lui un nom (ex. "ferme-app") → choisissez un mot de passe de base de données (à garder de côté, différent du PIN de l'app) → région la plus proche → "Create new project" (peut prendre 1-2 minutes)
+
+**2. Créer la table**
+- Dans le menu de gauche, cliquez sur **"SQL Editor"** → **"New query"**
+- Ouvrez le fichier `supabase-setup.sql` (inclus dans ce projet), copiez tout son contenu, collez-le dans l'éditeur
+- Cliquez sur **"Run"** (ou Ctrl+Entrée)
+
+**3. Récupérer les identifiants**
+- Menu de gauche → **"Project Settings"** (roue crantée) → **"API"**
+- Copiez la **"Project URL"** (ressemble à `https://xxxx.supabase.co`)
+- Copiez la clé **"anon public"** (une longue chaîne de caractères)
+
+**4. Connecter l'app**
+- Dans l'app, ouvrez **Paramètres** (⚙️) → section **"Synchronisation multi-appareils (Cloud)"**
+- Collez l'URL et la clé anon récupérées
+- Choisissez un **code de ferme** (ex. `ferme-desire-2026`) et un **PIN secret**
+- Sur le premier appareil : bouton **"Créer mon espace cloud"**
+- Sur les appareils suivants : mêmes URL/clé/code/PIN, puis **"Rejoindre un espace existant"**
+
+Ensuite, utilisez **"Envoyer vers le cloud"** / **"Récupérer depuis le cloud"** pour synchroniser manuellement — ce n'est pas automatique et en temps réel, c'est un point de synchronisation volontaire (voir les limites dans la conversation).
+
+---
+
 ## Obtenir le fichier .apk sans rien installer (le plus simple)
 
 Ce projet contient un fichier `.github/workflows/build-apk.yml` qui compile
