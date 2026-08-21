@@ -1877,17 +1877,25 @@ function Finances({ data, update }) {
             const departement = data.departements.find((d) => d.id === t.departementId);
             const section = data.sectionsProduction.find((s) => s.id === t.sectionProductionId);
             return (
-              <div key={t.id} className="p-3 flex items-center justify-between text-sm">
-                <div>
-                  <p className="font-medium">{t.description || t.categorie}</p>
+              <div key={t.id} className="p-3 flex items-center justify-between text-sm gap-2">
+                <div className="min-w-0">
+                  <p className="font-medium truncate">{t.description || t.categorie}</p>
                   <p className="text-xs text-[#8B8974]">
                     {t.categorie}{t.codeCategorie ? ` (${t.codeCategorie})` : ""} · {fmtDate(t.date)} · {compte ? `${COMPTE_LABELS[compte.type]} (${compte.nom})` : "Espèces"}{produit ? ` · ${produit.nom}` : ""}
                     {departement ? ` · ${departement.nom}` : ""}{section ? ` · ${section.nom}` : ""}
                   </p>
                 </div>
-                <span className={t.type === "revenu" ? "text-[#3C5A34] font-medium" : "text-[#A6402A] font-medium"}>
-                  {t.type === "revenu" ? "+" : "-"}{formatNombre(t.montant)}
-                </span>
+                <div className="flex items-center gap-2 shrink-0">
+                  <span className={t.type === "revenu" ? "text-[#3C5A34] font-medium" : "text-[#A6402A] font-medium"}>
+                    {t.type === "revenu" ? "+" : "-"}{formatNombre(t.montant)}
+                  </span>
+                  <button
+                    onClick={() => { if (confirm("Supprimer cette transaction ?")) update((d) => { d.transactions = d.transactions.filter((x) => x.id !== t.id); }); }}
+                    className="text-[#C7C2A8] hover:text-[#A6402A]"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
               </div>
             );
           })}
