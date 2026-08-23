@@ -205,20 +205,6 @@ const CHAMPS_COMPOSTAGE = [
   { key: "mainOeuvrePayee", label: "Nombre de mains d'œuvre payées", type: "number", icon: "Users" },
 ];
 
-// Libellé du champ "spéculation" adapté par section végétale (comme la reproduction pour l'élevage)
-const LIBELLE_SPECULATION_PAR_SECTION = {
-  "Maraîchage": "Type de produit maraîcher",
-  "Céréales": "Type de céréale",
-  "Agroforesterie": "Type d'arbre produit",
-  "Pépinière": "Type de plant/arbre en pépinière",
-  "Semence": "Type de semence produite",
-};
-
-function getChampsVegetal(nomSection) {
-  const libelle = LIBELLE_SPECULATION_PAR_SECTION[nomSection] || "Spéculation (culture)";
-  return CHAMPS_VEGETAL_COMMUN.map((c) => c.key === "speculation" ? { ...c, label: libelle } : c);
-}
-
 const SECTIONS_TRANSFORMATION = ["Transformation artisanale de produits locaux", "Pâtisserie industrielle", "Restauration"];
 
 const SECTIONS_VEGETALES = ["Maraîchage", "Céréales", "Agroforesterie", "Pépinière", "Semence"];
@@ -297,7 +283,7 @@ const CHAMPS_SIMPLES_DEFAUT = [
 function getConfigSection(nomSection) {
   const config = FIELD_CONFIG_PAR_SECTION[nomSection];
   if (config) return { commun: CHAMPS_ELEVAGE_COMMUN, reproduction: config.reproduction };
-  if (SECTIONS_VEGETALES.includes(nomSection)) return { commun: getChampsVegetal(nomSection), reproduction: null };
+  if (SECTIONS_VEGETALES.includes(nomSection)) return { commun: CHAMPS_VEGETAL_COMMUN, reproduction: null };
   if (SECTIONS_TRANSFORMATION.includes(nomSection)) return { commun: CHAMPS_TRANSFORMATION_COMMUN, reproduction: null };
   if (nomSection === "Compostage") return { commun: CHAMPS_COMPOSTAGE, reproduction: null };
   return { commun: null, reproduction: null, simple: CHAMPS_SIMPLES_DEFAUT };
@@ -5057,8 +5043,6 @@ function Personnel({ data, update }) {
 
 function EmployeForm({ onSubmit, initial, departements = [], sectionsProduction = [] }) {
   const [nom, setNom] = useState(initial?.nom || "");
-  const [sexe, setSexe] = useState(initial?.sexe || "");
-  const [niveauEtude, setNiveauEtude] = useState(initial?.niveauEtude || "");
   const [poste, setPoste] = useState(initial?.poste || "");
   const [niveauHierarchique, setNiveauHierarchique] = useState(initial?.niveauHierarchique || HIERARCHIE_POSTES[0]);
   const [sectionProduction, setSectionProduction] = useState(initial?.sectionProduction || "");
@@ -5076,33 +5060,12 @@ function EmployeForm({ onSubmit, initial, departements = [], sectionsProduction 
     <form className="space-y-3" onSubmit={(e) => {
       e.preventDefault(); if (!nom) return;
       onSubmit({
-        nom, sexe, niveauEtude, poste, niveauHierarchique, sectionProduction, competence, departementId: departementId || null,
+        nom, poste, niveauHierarchique, sectionProduction, competence, departementId: departementId || null,
         typeContrat, salaireMensuel: salaireMensuel || 0, dateDebut, dateFin: dateFin || null, statut, telephone,
         situationFamiliale, nombreEnfants: nombreEnfants || 0,
       });
     }}>
       <Field label="Nom complet"><Input value={nom} onChange={(e) => setNom(e.target.value)} required /></Field>
-      <Field label="Sexe">
-        <Select value={sexe} onChange={(e) => setSexe(e.target.value)}>
-          <option value="">Non précisé</option>
-          <option value="homme">Homme</option>
-          <option value="femme">Femme</option>
-        </Select>
-      </Field>
-      <Field label="Niveau d'étude">
-        <Select value={niveauEtude} onChange={(e) => setNiveauEtude(e.target.value)}>
-          <option value="">Non précisé</option>
-          <option value="cap">CAP</option>
-          <option value="bt">BT</option>
-          <option value="duts">DUTS</option>
-          <option value="licence">Licence</option>
-          <option value="master">Master</option>
-          <option value="doctorat">Doctorat</option>
-          <option value="certificat">Certificat</option>
-          <option value="attestation">Attestation</option>
-          <option value="autres">Autres</option>
-        </Select>
-      </Field>
       <Field label="Intitulé du poste"><Input value={poste} onChange={(e) => setPoste(e.target.value)} placeholder="Ex. Ouvrier agricole, Vacher..." /></Field>
       <Field label="Niveau hiérarchique">
         <Select value={niveauHierarchique} onChange={(e) => setNiveauHierarchique(e.target.value)}>
