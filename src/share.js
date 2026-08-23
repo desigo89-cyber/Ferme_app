@@ -5,6 +5,7 @@
 // un simple téléchargement.
 
 import { Capacitor } from "@capacitor/core";
+import { genererDocumentPDF, dataUriVersBase64 } from "./pdf.js";
 
 export async function partagerSauvegarde(data, nomFichier) {
   const json = JSON.stringify(data, null, 2);
@@ -43,31 +44,41 @@ export async function partagerSauvegarde(data, nomFichier) {
   return true;
 }
 
-// Partage d'un document (reçu, facture...) — ouvre la feuille de partage
-// native (l'utilisateur y choisit son application mail) avec le résumé du
-// document en texte, et la signature en pièce jointe si elle existe.
-export async function partagerDocument({ titre, texte, sujet, signatureDataUrl, nomFichierImage }) {
+// Partage d'un document (reçu, facture...) — génère un vrai fichier PDF
+// (titre, texte, signature en pièce jointe si présente) et ouvre la feuille
+// de partage native (l'utilisateur y choisit son application mail) avec ce
+// PDF en pièce jointe. Sur le web, le PDF est téléchargé (les navigateurs ne
+// permettent pas de joindre un fichier à un mailto:), puis le client mail
+// s'ouvre avec le texte pré-rempli pour que l'utilisateur joigne le fichier
+// téléchargé manuellement.
+export async function partagerDocument({ titre, texte, sujet, signatureDataUrl, nomFichierImage, nomFichierPdf }) {
+  const nomPdf = nomFichierPdf || `${(sujet || titre || "document").replace(/[^a-z0-9\-_]+/gi, "_")}.pdf`;
+  const pdfDataUri = genererDocumentPDF({ titre, sousTitre: sujet, texte, signatureDataUrl });
+
   if (Capacitor.isNativePlatform()) {
     const { Share } = await import("@capacitor/share");
+    const { Filesystem, Directory } = await import("@capacitor/filesystem");
 
-    if (signatureDataUrl) {
-      const { Filesystem, Directory } = await import("@capacitor/filesystem");
-      const base64 = signatureDataUrl.split(",")[1];
-      const written = await Filesystem.writeFile({
-        path: nomFichierImage || "signature.png",
-        data: base64,
-        directory: Directory.Cache,
-      });
-      await Share.share({ title: sujet || titre, text: texte, url: written.uri, dialogTitle: "Partager le document" });
-      return true;
-    }
-
-    await Share.share({ title: sujet || titre, text: texte, dialogTitle: "Partager le document" });
+    const written = await Filesystem.writeFile({
+      path: nomPdf,
+      data: dataUriVersBase64(pdfDataUri),
+      directory: Directory.Cache,
+    });
+    await Share.share({ title: sujet || titre, text: texte, url: written.uri, dialogTitle: "Partager le document (PDF)" });
     return true;
   }
 
-  // Fallback web : ouvre le client mail par défaut avec le texte pré-rempli.
-  const mailto = `mailto:?subject=${encodeURIComponent(sujet || titre)}&body=${encodeURIComponent(texte)}`;
+  // Fallback web : télécharge le PDF, puis ouvre le client mail avec le texte pré-rempli.
+  const a = document.createElement("a");
+  a.href = pdfDataUri;
+  a.download = nomPdf;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+
+  const mailto = `mailto:?subject=${encodeURIComponent(sujet || titre)}&body=${encodeURIComponent(
+    `${texte}\n\n(Le document PDF vient d'être téléchargé — pensez à le joindre à cet email avant l'envoi.)`
+  )}`;
   window.open(mailto, "_blank");
   return true;
 }
