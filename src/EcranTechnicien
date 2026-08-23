@@ -65,6 +65,19 @@ const CHAMPS_COMPOSTAGE = [
   { key: "mainOeuvrePayee", label: "Nombre de mains d'œuvre payées", type: "number" },
 ];
 
+const LIBELLE_SPECULATION_PAR_SECTION = {
+  "Maraîchage": "Type de produit maraîcher",
+  "Céréales": "Type de céréale",
+  "Agroforesterie": "Type d'arbre produit",
+  "Pépinière": "Type de plant/arbre en pépinière",
+  "Semence": "Type de semence produite",
+};
+
+function getChampsVegetal(nomSection) {
+  const libelle = LIBELLE_SPECULATION_PAR_SECTION[nomSection] || "Spéculation (culture)";
+  return CHAMPS_VEGETAL_COMMUN.map((c) => c.key === "speculation" ? { ...c, label: libelle } : c);
+}
+
 const SECTIONS_TRANSFORMATION = ["Transformation artisanale de produits locaux", "Pâtisserie industrielle", "Restauration"];
 
 const SECTIONS_VEGETALES = ["Maraîchage", "Céréales", "Agroforesterie", "Pépinière", "Semence"];
@@ -142,7 +155,7 @@ const CHAMPS_SIMPLES_DEFAUT = [
 function getConfigSection(nomSection) {
   const config = FIELD_CONFIG_PAR_SECTION[nomSection];
   if (config) return { champs: [...CHAMPS_ELEVAGE_COMMUN, ...config.reproduction] };
-  if (SECTIONS_VEGETALES.includes(nomSection)) return { champs: CHAMPS_VEGETAL_COMMUN };
+  if (SECTIONS_VEGETALES.includes(nomSection)) return { champs: getChampsVegetal(nomSection) };
   if (SECTIONS_TRANSFORMATION.includes(nomSection)) return { champs: CHAMPS_TRANSFORMATION_COMMUN };
   if (nomSection === "Compostage") return { champs: CHAMPS_COMPOSTAGE };
   return { champs: CHAMPS_SIMPLES_DEFAUT };
