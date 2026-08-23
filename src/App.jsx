@@ -5273,12 +5273,20 @@ function EmployeForm({ onSubmit, initial, departements = [], sectionsProduction 
   const [telephone, setTelephone] = useState(initial?.telephone || "");
   const [situationFamiliale, setSituationFamiliale] = useState(initial?.situationFamiliale || "celibataire");
   const [nombreEnfants, setNombreEnfants] = useState(initial?.nombreEnfants ?? 0);
+  // Si l'employé a un intitulé de poste enregistré avant l'introduction de cette
+  // liste (texte libre à l'époque, ex. "Ouvrier agricole"), on l'ajoute en tête
+  // de liste pour qu'il reste visible et sélectionné plutôt que d'être perdu.
+  const optionsPoste = poste && !POSTES_SUGGERES.includes(poste) ? [poste, ...POSTES_SUGGERES] : POSTES_SUGGERES;
+  // Le champ Département reste affiché (et n'est pas effacé à l'enregistrement) si le
+  // poste n'est pas reconnu dans la liste (ancien intitulé texte libre) — pour ne pas
+  // perdre un département déjà assigné à un employé enregistré avant ce changement.
+  const afficherDepartement = !POSTES_SUGGERES.includes(poste) || NIVEAUX_AVEC_DEPARTEMENT.includes(poste);
   return (
     <form className="space-y-3" onSubmit={(e) => {
       e.preventDefault(); if (!nom) return;
       onSubmit({
         nom, sexe, niveauEtude, poste, niveauHierarchique, sectionProduction, competence,
-        departementId: NIVEAUX_AVEC_DEPARTEMENT.includes(poste) ? (departementId || null) : null,
+        departementId: afficherDepartement ? (departementId || null) : null,
         typeContrat, salaireMensuel: salaireMensuel || 0, dateDebut, dateFin: dateFin || null, statut, telephone,
         situationFamiliale, nombreEnfants: nombreEnfants || 0,
       });
@@ -5307,7 +5315,7 @@ function EmployeForm({ onSubmit, initial, departements = [], sectionsProduction 
       </Field>
       <Field label="Intitulé du poste">
         <Select value={poste} onChange={(e) => setPoste(e.target.value)}>
-          {POSTES_SUGGERES.map((p) => <option key={p} value={p}>{p}</option>)}
+          {optionsPoste.map((p) => <option key={p} value={p}>{p}</option>)}
         </Select>
       </Field>
       <Field label="Niveau hiérarchique">
@@ -5315,7 +5323,7 @@ function EmployeForm({ onSubmit, initial, departements = [], sectionsProduction 
           {NIVEAUX_HIERARCHIQUES.map((n) => <option key={n} value={n}>{n}</option>)}
         </Select>
       </Field>
-      {departements.length > 0 && NIVEAUX_AVEC_DEPARTEMENT.includes(poste) && (
+      {departements.length > 0 && afficherDepartement && (
         <Field label="Département">
           <Select value={departementId} onChange={(e) => setDepartementId(e.target.value)}>
             <option value="">Non précisé</option>
