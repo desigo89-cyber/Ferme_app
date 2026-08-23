@@ -14,6 +14,7 @@ import { storage } from "./storage.js";
 import { partagerSauvegarde, partagerDocument } from "./share.js";
 import { choisirContactTelephone, enregistrerDansRepertoire, surAppareilNatif } from "./contacts.js";
 import * as sync from "./sync.js";
+import EcranTechnicien from "./EcranTechnicien.jsx";
 
 // ---------- Design tokens ----------
 // bg (paper): #EFEAD9 | surface: #FFFFFF | ink: #232620 | muted: #6E6B58
@@ -50,6 +51,7 @@ const emptyState = {
   categoriesDepenses: [],
   sectionsProduction: [],
   productions: [],
+  saisiesTechnicien: [],
   migrationDepartementsSectionsV2: false,
   security: { password: null },
 };
@@ -133,7 +135,174 @@ const SECTIONS_PRODUCTION_DEFAUT = [
   { nom: "Transformation artisanale de produits locaux", code: "SEC-17", departementCode: "TRF" },
   { nom: "Pâtisserie industrielle", code: "SEC-18", departementCode: "TRF" },
   { nom: "Restauration", code: "SEC-19", departementCode: "TRF" },
+  { nom: "Compostage", code: "SEC-20", departementCode: "PV" },
 ];
+const ROLES_GESTIONNAIRE = [
+  { value: "complet", label: "Accès complet (comme aujourd'hui)" },
+  { value: "technicien", label: "Technicien de section" },
+  { value: "responsable_departement", label: "Responsable de département" },
+  { value: "caisse", label: "Caisse / poste de vente" },
+  { value: "administration", label: "Administration" },
+  { value: "promoteur", label: "Promoteur (lecture seule)" },
+];
+
+// Configuration des champs de saisie journalière par section d'élevage.
+// "commun" = champs partagés par toutes les sections animales.
+// "reproduction" = bloc spécifique à l'espèce (terminologie adaptée), vide = pas de reproduction.
+const CHAMPS_ELEVAGE_COMMUN = [
+  { key: "poids", label: "Poids moyen (kg)", type: "number", step: "0.01", icon: "Scale" },
+  { key: "alimentJour", label: "Aliment consommé (kg)", type: "number", icon: "Wheat" },
+  { key: "stock", label: "Stock (têtes)", type: "number", icon: "Package" },
+  { key: "entrees", label: "Entrées", type: "number", icon: "LogIn" },
+  { key: "sorties", label: "Sorties", type: "number", icon: "LogOut" },
+  { key: "malades", label: "Malades", type: "number", icon: "FirstAidKit" },
+  { key: "morts", label: "Morts", type: "number", icon: "AlertTriangle" },
+  { key: "vendus", label: "Vendus", type: "number", icon: "Coins" },
+  { key: "transferes", label: "Transférés", type: "number", icon: "ArrowsExchange" },
+  { key: "perdus", label: "Perdus", type: "number", icon: "AlertCircle" },
+  { key: "traitement", label: "Traitement administré", type: "text", icon: "Syringe" },
+];
+
+// Champs communs aux sections de production végétale
+const CHAMPS_VEGETAL_COMMUN = [
+  { key: "speculation", label: "Spéculation (culture)", type: "text", icon: "Sprout" },
+  { key: "superficie", label: "Superficie (ha)", type: "number", step: "0.01", icon: "Map" },
+  { key: "densite", label: "Densité de semis", type: "text", icon: "Grid" },
+  { key: "labour", label: "Labour effectué", type: "text", icon: "Tractor" },
+  { key: "semis", label: "Semis effectué", type: "text", icon: "Sprout" },
+  { key: "semences", label: "Semences utilisées (kg)", type: "number", icon: "Wheat" },
+  { key: "sarclages", label: "Nombre de sarclages", type: "number", icon: "Scissors" },
+  { key: "engraisOrganique", label: "Engrais organique utilisé (kg)", type: "number", icon: "Sprout" },
+  { key: "engraisChimique", label: "Engrais chimique utilisé (kg)", type: "number", icon: "Package" },
+  { key: "mainOeuvrePayee", label: "Nombre de mains d'œuvre payées", type: "number", icon: "Users" },
+  { key: "rendement", label: "Rendement (kg/ha)", type: "number", icon: "TrendingUp" },
+  { key: "traitement", label: "Traitement phytosanitaire", type: "text", icon: "Syringe" },
+];
+
+// Champs communs aux sections de transformation/production artisanale
+const CHAMPS_TRANSFORMATION_COMMUN = [
+  { key: "matierePremiere", label: "Matière première utilisée (kg)", type: "number", icon: "Package" },
+  { key: "quantiteProduite", label: "Quantité produite", type: "number", icon: "Boxes" },
+  { key: "quantiteVendue", label: "Quantité vendue", type: "number", icon: "Coins" },
+  { key: "quantiteStockee", label: "Quantité stockée", type: "number", icon: "Package" },
+  { key: "pertes", label: "Pertes / déchets", type: "number", icon: "AlertTriangle" },
+  { key: "mainOeuvrePayee", label: "Nombre de mains d'œuvre payées", type: "number", icon: "Users" },
+];
+
+// Champs de la section compostage/fertilisation
+const CHAMPS_COMPOSTAGE = [
+  { key: "matiereVerte", label: "Matière verte (kg)", type: "number", icon: "Sprout" },
+  { key: "matiereAnimale", label: "Matière animale (kg)", type: "number", icon: "PawPrint" },
+  { key: "cendre", label: "Cendre (kg)", type: "number", icon: "Package" },
+  { key: "terreauLimon", label: "Terreau ou limon (kg)", type: "number", icon: "Package" },
+  { key: "eau", label: "Eau (litres)", type: "number", icon: "Droplet" },
+  { key: "compostSolideProduit", label: "Compost solide produit (kg)", type: "number", icon: "Boxes" },
+  { key: "engraisLiquideProduit", label: "Engrais liquide produit (litres)", type: "number", step: "0.1", icon: "Droplet" },
+  { key: "quantiteTotaleProduite", label: "Quantité totale produite", type: "number", icon: "Boxes" },
+  { key: "quantiteStockee", label: "Quantité stockée", type: "number", icon: "Package" },
+  { key: "quantiteVendue", label: "Quantité vendue", type: "number", icon: "Coins" },
+  { key: "quantiteTransferee", label: "Quantité transférée", type: "number", icon: "ArrowsExchange" },
+  { key: "mainOeuvrePayee", label: "Nombre de mains d'œuvre payées", type: "number", icon: "Users" },
+];
+
+// Libellé du champ "spéculation" adapté par section végétale (comme la reproduction pour l'élevage)
+const LIBELLE_SPECULATION_PAR_SECTION = {
+  "Maraîchage": "Type de produit maraîcher",
+  "Céréales": "Type de céréale",
+  "Agroforesterie": "Type d'arbre produit",
+  "Pépinière": "Type de plant/arbre en pépinière",
+  "Semence": "Type de semence produite",
+};
+
+function getChampsVegetal(nomSection) {
+  const libelle = LIBELLE_SPECULATION_PAR_SECTION[nomSection] || "Spéculation (culture)";
+  return CHAMPS_VEGETAL_COMMUN.map((c) => c.key === "speculation" ? { ...c, label: libelle } : c);
+}
+
+const SECTIONS_TRANSFORMATION = ["Transformation artisanale de produits locaux", "Pâtisserie industrielle", "Restauration"];
+
+const SECTIONS_VEGETALES = ["Maraîchage", "Céréales", "Agroforesterie", "Pépinière", "Semence"];
+
+const FIELD_CONFIG_PAR_SECTION = {
+  "Pondeuse": { reproduction: [
+    { key: "oeufsPondus", label: "Œufs pondus (jour)", type: "number" },
+    { key: "tauxPonte", label: "Taux de ponte (%)", type: "number", step: "0.1" },
+    { key: "oeufsCouves", label: "Œufs mis en couvaison", type: "number" },
+    { key: "eclosions", label: "Éclosions", type: "number" },
+  ]},
+  "Chair": { reproduction: [] },
+  "Porc": { reproduction: [
+    { key: "saillie", label: "Saillies", type: "number" },
+    { key: "gestation", label: "Femelles gestantes", type: "number" },
+    { key: "miseBas", label: "Mises bas", type: "number" },
+    { key: "sevrage", label: "Sevrages", type: "number" },
+  ]},
+  "Bovin": { reproduction: [
+    { key: "saillie", label: "Saillies / inséminations", type: "number" },
+    { key: "gestation", label: "Femelles gestantes", type: "number" },
+    { key: "miseBas", label: "Mises bas", type: "number" },
+    { key: "sevrage", label: "Sevrages", type: "number" },
+  ]},
+  "Ovin": { reproduction: [
+    { key: "saillie", label: "Saillies", type: "number" },
+    { key: "gestation", label: "Femelles gestantes", type: "number" },
+    { key: "miseBas", label: "Mises bas", type: "number" },
+    { key: "sevrage", label: "Sevrages", type: "number" },
+  ]},
+  "Caprin": { reproduction: [
+    { key: "saillie", label: "Saillies", type: "number" },
+    { key: "gestation", label: "Femelles gestantes", type: "number" },
+    { key: "miseBas", label: "Mises bas", type: "number" },
+    { key: "sevrage", label: "Sevrages", type: "number" },
+  ]},
+  "Autres volailles": { reproduction: [
+    { key: "oeufsPondus", label: "Œufs pondus (jour)", type: "number" },
+    { key: "oeufsCouves", label: "Œufs mis en couvaison", type: "number" },
+    { key: "eclosions", label: "Éclosions", type: "number" },
+  ]},
+  "Équin": { reproduction: [
+    { key: "saillie", label: "Saillies", type: "number" },
+    { key: "gestation", label: "Femelles gestantes", type: "number" },
+    { key: "miseBas", label: "Mises bas (poulinages)", type: "number" },
+    { key: "sevrage", label: "Sevrages", type: "number" },
+  ]},
+  "Asin": { reproduction: [
+    { key: "saillie", label: "Saillies", type: "number" },
+    { key: "gestation", label: "Femelles gestantes", type: "number" },
+    { key: "miseBas", label: "Mises bas", type: "number" },
+    { key: "sevrage", label: "Sevrages", type: "number" },
+  ]},
+  "Apiculture": { reproduction: [
+    { key: "essaimage", label: "Essaimages", type: "number" },
+    { key: "nombreRuches", label: "Nombre de ruches actives", type: "number" },
+    { key: "mielRecolte", label: "Miel récolté (litres)", type: "number", step: "0.1" },
+    { key: "mielVendu", label: "Miel vendu (litres)", type: "number", step: "0.1" },
+    { key: "mielStocke", label: "Miel stocké (litres)", type: "number", step: "0.1" },
+  ]},
+  "Pisciculture": { reproduction: [
+    { key: "empoissonnement", label: "Alevins mis en bassin", type: "number" },
+    { key: "recoltePoisson", label: "Récolte (kg)", type: "number" },
+  ]},
+};
+
+// Sections sans configuration détaillée -> formulaire simple générique
+const CHAMPS_SIMPLES_DEFAUT = [
+  { key: "activite", label: "Activité réalisée", type: "textarea" },
+  { key: "quantiteRecoltee", label: "Quantité récoltée", type: "number" },
+  { key: "quantiteLivree", label: "Quantité livrée à la vente", type: "number" },
+  { key: "morts", label: "Animaux morts", type: "number" },
+  { key: "produitsUtilises", label: "Produits phytosanitaires / vétérinaires utilisés", type: "textarea" },
+];
+
+function getConfigSection(nomSection) {
+  const config = FIELD_CONFIG_PAR_SECTION[nomSection];
+  if (config) return { commun: CHAMPS_ELEVAGE_COMMUN, reproduction: config.reproduction };
+  if (SECTIONS_VEGETALES.includes(nomSection)) return { commun: getChampsVegetal(nomSection), reproduction: null };
+  if (SECTIONS_TRANSFORMATION.includes(nomSection)) return { commun: CHAMPS_TRANSFORMATION_COMMUN, reproduction: null };
+  if (nomSection === "Compostage") return { commun: CHAMPS_COMPOSTAGE, reproduction: null };
+  return { commun: null, reproduction: null, simple: CHAMPS_SIMPLES_DEFAUT };
+}
+
 const CHARGE_LABELS = { variable: "Charge variable", fixe: "Charge fixe", sociale: "Charge sociale", salariale: "Salaire", autre: "Autre" };
 const DEVISES = ["FCFA", "EUR", "USD", "GNF", "MAD", "CDF"];
 
@@ -407,6 +576,18 @@ export default function FarmApp() {
     );
   }
 
+  const gestionnaireConnecte = data.gestionnaires.find((g) => g.id === currentGestionnaireId);
+  if (gestionnaireConnecte && gestionnaireConnecte.role === "technicien") {
+    return (
+      <EcranTechnicien
+        data={data}
+        update={update}
+        gestionnaire={gestionnaireConnecte}
+        onDeconnexion={() => { setUnlocked(false); setCurrentGestionnaireId(null); }}
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[var(--color-bg)] text-[#232620]" style={themeVars}>
       <header className="bg-[var(--color-primary)] text-[#F3EFE2] px-4 sm:px-6 py-4">
@@ -627,6 +808,7 @@ function GestionnairesSection({ data, update }) {
       {showAdd && (
         <Modal title="Nouveau gestionnaire" onClose={() => setShowAdd(false)}>
           <GestionnaireForm
+            sectionsProduction={data.sectionsProduction}
             onSubmit={(vals) => {
               update((d) => d.gestionnaires.push({ id: uid(), ...vals, actif: true }));
               setShowAdd(false);
@@ -639,6 +821,7 @@ function GestionnairesSection({ data, update }) {
         <Modal title="Modifier le gestionnaire" onClose={() => setEditingGestionnaire(null)}>
           <GestionnaireForm
             initial={data.gestionnaires.find((g) => g.id === editingGestionnaire)}
+            sectionsProduction={data.sectionsProduction}
             onSubmit={(vals) => {
               update((d) => { const g = d.gestionnaires.find((x) => x.id === editingGestionnaire); Object.assign(g, vals); });
               setEditingGestionnaire(null);
@@ -674,13 +857,37 @@ function GestionnairesSection({ data, update }) {
   );
 }
 
-function GestionnaireForm({ onSubmit, initial }) {
+function GestionnaireForm({ onSubmit, initial, sectionsProduction = [] }) {
   const [nom, setNom] = useState(initial?.nom || "");
   const [code, setCode] = useState(initial?.code || "");
+  const [role, setRole] = useState(initial?.role || "complet");
+  const [sectionsAssignees, setSectionsAssignees] = useState(initial?.sectionsAssignees || []);
+
+  const toggleSection = (id) => {
+    setSectionsAssignees((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
+  };
+
   return (
-    <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); if (!nom || !code) return; onSubmit({ nom, code }); }}>
+    <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); if (!nom || !code) return; onSubmit({ nom, code, role, sectionsAssignees: role === "technicien" ? sectionsAssignees : [] }); }}>
       <Field label="Nom du gestionnaire"><Input value={nom} onChange={(e) => setNom(e.target.value)} /></Field>
       <Field label="Code d'entrée"><Input type="text" value={code} onChange={(e) => setCode(e.target.value)} placeholder="Ex. 1234" /></Field>
+      <Field label="Rôle">
+        <select className="w-full border border-[#DFD8C2] rounded-md px-3 py-2 text-sm bg-white" value={role} onChange={(e) => setRole(e.target.value)}>
+          {ROLES_GESTIONNAIRE.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
+        </select>
+      </Field>
+      {role === "technicien" && (
+        <Field label="Sections gérées par ce technicien">
+          <div className="space-y-1.5 max-h-48 overflow-y-auto border border-[#DFD8C2] rounded-md p-2">
+            {sectionsProduction.filter((s) => s.actif !== false).map((s) => (
+              <label key={s.id} className="flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={sectionsAssignees.includes(s.id)} onChange={() => toggleSection(s.id)} />
+                {s.nom}
+              </label>
+            ))}
+          </div>
+        </Field>
+      )}
       <Button type="submit" variant="accent" className="w-full">{initial ? "Mettre à jour" : "Enregistrer"}</Button>
     </form>
   );
@@ -4850,6 +5057,8 @@ function Personnel({ data, update }) {
 
 function EmployeForm({ onSubmit, initial, departements = [], sectionsProduction = [] }) {
   const [nom, setNom] = useState(initial?.nom || "");
+  const [sexe, setSexe] = useState(initial?.sexe || "");
+  const [niveauEtude, setNiveauEtude] = useState(initial?.niveauEtude || "");
   const [poste, setPoste] = useState(initial?.poste || "");
   const [niveauHierarchique, setNiveauHierarchique] = useState(initial?.niveauHierarchique || HIERARCHIE_POSTES[0]);
   const [sectionProduction, setSectionProduction] = useState(initial?.sectionProduction || "");
@@ -4867,12 +5076,33 @@ function EmployeForm({ onSubmit, initial, departements = [], sectionsProduction 
     <form className="space-y-3" onSubmit={(e) => {
       e.preventDefault(); if (!nom) return;
       onSubmit({
-        nom, poste, niveauHierarchique, sectionProduction, competence, departementId: departementId || null,
+        nom, sexe, niveauEtude, poste, niveauHierarchique, sectionProduction, competence, departementId: departementId || null,
         typeContrat, salaireMensuel: salaireMensuel || 0, dateDebut, dateFin: dateFin || null, statut, telephone,
         situationFamiliale, nombreEnfants: nombreEnfants || 0,
       });
     }}>
       <Field label="Nom complet"><Input value={nom} onChange={(e) => setNom(e.target.value)} required /></Field>
+      <Field label="Sexe">
+        <Select value={sexe} onChange={(e) => setSexe(e.target.value)}>
+          <option value="">Non précisé</option>
+          <option value="homme">Homme</option>
+          <option value="femme">Femme</option>
+        </Select>
+      </Field>
+      <Field label="Niveau d'étude">
+        <Select value={niveauEtude} onChange={(e) => setNiveauEtude(e.target.value)}>
+          <option value="">Non précisé</option>
+          <option value="cap">CAP</option>
+          <option value="bt">BT</option>
+          <option value="duts">DUTS</option>
+          <option value="licence">Licence</option>
+          <option value="master">Master</option>
+          <option value="doctorat">Doctorat</option>
+          <option value="certificat">Certificat</option>
+          <option value="attestation">Attestation</option>
+          <option value="autres">Autres</option>
+        </Select>
+      </Field>
       <Field label="Intitulé du poste"><Input value={poste} onChange={(e) => setPoste(e.target.value)} placeholder="Ex. Ouvrier agricole, Vacher..." /></Field>
       <Field label="Niveau hiérarchique">
         <Select value={niveauHierarchique} onChange={(e) => setNiveauHierarchique(e.target.value)}>
