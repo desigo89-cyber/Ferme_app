@@ -73,15 +73,28 @@ const DOC_LABELS = { recu: "Reçu", facture: "Facture", bordereau_reception: "Bo
 
 const CONTRAT_LABELS = { cdi: "CDI", cdd: "CDD", stage: "Stage", essai: "Période d'essai", prestation: "Prestation" };
 
-const HIERARCHIE_POSTES = [
+const NIVEAUX_AVEC_DEPARTEMENT = ["Ouvrier", "Technicien de production", "Responsable de département"];
+// Intitulés de poste suggérés (anciennement la liste "niveau hiérarchique").
+const POSTES_SUGGERES = [
   "Ouvrier",
+  "Chauffeur",
+  "Coursier",
+  "Gardien",
   "Agent de livraison",
   "Poste de vente",
   "Technicien de production",
   "Responsable de département",
   "Responsable de site",
-  "Gérant / Responsable de l'entreprise",
+  "GRH (Responsable des ressources humaines)",
+  "Administrateur (gérant de l'entreprise)",
   "Promoteur de l'entreprise",
+];
+// Niveau hiérarchique générique (indépendant de l'intitulé précis du poste).
+const NIVEAUX_HIERARCHIQUES = [
+  "Exécution",
+  "Supervision",
+  "Direction",
+  "Externe (promoteur / investisseur)",
 ];
 const COMPETENCES_SUGGESTIONS = [
   "Agronome", "Comptable", "Chauffeur", "Ingénieur", "Gestionnaire", "Vétérinaire", "Commercial", "Technicien",
@@ -5247,8 +5260,8 @@ function EmployeForm({ onSubmit, initial, departements = [], sectionsProduction 
   const [nom, setNom] = useState(initial?.nom || "");
   const [sexe, setSexe] = useState(initial?.sexe || "");
   const [niveauEtude, setNiveauEtude] = useState(initial?.niveauEtude || "");
-  const [poste, setPoste] = useState(initial?.poste || "");
-  const [niveauHierarchique, setNiveauHierarchique] = useState(initial?.niveauHierarchique || HIERARCHIE_POSTES[0]);
+  const [poste, setPoste] = useState(initial?.poste || POSTES_SUGGERES[0]);
+  const [niveauHierarchique, setNiveauHierarchique] = useState(initial?.niveauHierarchique || NIVEAUX_HIERARCHIQUES[0]);
   const [sectionProduction, setSectionProduction] = useState(initial?.sectionProduction || "");
   const [competence, setCompetence] = useState(initial?.competence || "");
   const [departementId, setDepartementId] = useState(initial?.departementId || "");
@@ -5264,7 +5277,8 @@ function EmployeForm({ onSubmit, initial, departements = [], sectionsProduction 
     <form className="space-y-3" onSubmit={(e) => {
       e.preventDefault(); if (!nom) return;
       onSubmit({
-        nom, sexe, niveauEtude, poste, niveauHierarchique, sectionProduction, competence, departementId: departementId || null,
+        nom, sexe, niveauEtude, poste, niveauHierarchique, sectionProduction, competence,
+        departementId: NIVEAUX_AVEC_DEPARTEMENT.includes(poste) ? (departementId || null) : null,
         typeContrat, salaireMensuel: salaireMensuel || 0, dateDebut, dateFin: dateFin || null, statut, telephone,
         situationFamiliale, nombreEnfants: nombreEnfants || 0,
       });
@@ -5291,13 +5305,17 @@ function EmployeForm({ onSubmit, initial, departements = [], sectionsProduction 
           <option value="autres">Autres</option>
         </Select>
       </Field>
-      <Field label="Intitulé du poste"><Input value={poste} onChange={(e) => setPoste(e.target.value)} placeholder="Ex. Ouvrier agricole, Vacher..." /></Field>
-      <Field label="Niveau hiérarchique">
-        <Select value={niveauHierarchique} onChange={(e) => setNiveauHierarchique(e.target.value)}>
-          {HIERARCHIE_POSTES.map((p) => <option key={p} value={p}>{p}</option>)}
+      <Field label="Intitulé du poste">
+        <Select value={poste} onChange={(e) => setPoste(e.target.value)}>
+          {POSTES_SUGGERES.map((p) => <option key={p} value={p}>{p}</option>)}
         </Select>
       </Field>
-      {departements.length > 0 && (
+      <Field label="Niveau hiérarchique">
+        <Select value={niveauHierarchique} onChange={(e) => setNiveauHierarchique(e.target.value)}>
+          {NIVEAUX_HIERARCHIQUES.map((n) => <option key={n} value={n}>{n}</option>)}
+        </Select>
+      </Field>
+      {departements.length > 0 && NIVEAUX_AVEC_DEPARTEMENT.includes(poste) && (
         <Field label="Département">
           <Select value={departementId} onChange={(e) => setDepartementId(e.target.value)}>
             <option value="">Non précisé</option>
@@ -5305,7 +5323,7 @@ function EmployeForm({ onSubmit, initial, departements = [], sectionsProduction 
           </Select>
         </Field>
       )}
-      {niveauHierarchique === "Technicien de production" && (
+      {poste === "Technicien de production" && (
         <Field label="Unité / section de production">
           <Input list="sections-production" value={sectionProduction} onChange={(e) => setSectionProduction(e.target.value)} placeholder="Ex. Maraîchage, Pisciculture..." />
           <datalist id="sections-production">
