@@ -4,7 +4,7 @@ import {
   Plus, X, Trash2, AlertTriangle, Calendar, ChevronRight, Heart, Baby, Milk,
   FileText, Landmark, Banknote, Smartphone, Lock, KeyRound, Eye, EyeOff, BarChart3, Package, TrendingUp, Settings,
   Users, Share2, Palette, Image as ImageIcon, Coins, CalendarOff, UserCircle, Building2,
-  PiggyBank, Percent, HandCoins, Contact, Phone, Mail, PenTool, Send, Check, ClipboardList
+  PiggyBank, Percent, HandCoins, Contact, Phone, Mail, PenTool, Send, Check, ClipboardList, MapPin
 } from "lucide-react";
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
@@ -48,11 +48,13 @@ const emptyState = {
   connexions: [],
   tiers: [],
   departements: [],
+  sites: [],
   categoriesDepenses: [],
   sectionsProduction: [],
   productions: [],
   saisiesTechnicien: [],
   migrationDepartementsSectionsV2: false,
+  migrationSitesV1: false,
   security: { password: null },
 };
 
@@ -142,7 +144,7 @@ const ROLES_GESTIONNAIRE = [
   { value: "technicien", label: "Technicien de section" },
   { value: "responsable_departement", label: "Responsable de département" },
   { value: "caisse", label: "Caisse / poste de vente" },
-  { value: "administration", label: "Administration" },
+  { value: "administration", label: "Administrateur (gérant de l'entreprise)" },
   { value: "promoteur", label: "Promoteur (lecture seule)" },
 ];
 
@@ -428,8 +430,12 @@ export default function FarmApp() {
       try {
         const res = await storage.get(STORAGE_KEY);
         const seed = (merged) => {
+          if (!merged.sites || merged.sites.length === 0) {
+            merged.sites = [{ id: uid(), nom: "Site principal", code: "S1", responsableId: null, actif: true }];
+          }
+          const sitePrincipalId = merged.sites[0].id;
           if (!merged.departements || merged.departements.length === 0) {
-            merged.departements = DEPARTEMENTS_DEFAUT.map((d) => ({ id: uid(), ...d, actif: true }));
+            merged.departements = DEPARTEMENTS_DEFAUT.map((d) => ({ id: uid(), ...d, siteId: sitePrincipalId, actif: true }));
           }
           if (!merged.categoriesDepenses || merged.categoriesDepenses.length === 0) {
             merged.categoriesDepenses = CATEGORIES_DEPENSES_DEFAUT.map((c) => ({ id: uid(), ...c, actif: true }));
@@ -483,6 +489,16 @@ export default function FarmApp() {
               (merged.productions || []).forEach((p) => { if (p.departementId) p.departementId = reporterDep(p.departementId); });
             }
             merged.migrationDepartementsSectionsV2 = true;
+          }
+          // Migration : création d'un site principal par défaut, et rattachement
+          // de tous les départements existants à ce site (gestion multi-sites).
+          if (!merged.migrationSitesV1) {
+            if (!merged.sites || merged.sites.length === 0) {
+              const sitePrincipalId = uid();
+              merged.sites = [{ id: sitePrincipalId, nom: "Site principal", code: "S1", responsableId: null, actif: true }];
+              merged.departements = (merged.departements || []).map((d) => ({ ...d, siteId: d.siteId || sitePrincipalId }));
+            }
+            merged.migrationSitesV1 = true;
           }
           return merged;
         };
@@ -809,6 +825,7 @@ function GestionnairesSection({ data, update }) {
         <Modal title="Nouveau gestionnaire" onClose={() => setShowAdd(false)}>
           <GestionnaireForm
             sectionsProduction={data.sectionsProduction}
+            sites={data.sites}
             onSubmit={(vals) => {
               update((d) => d.gestionnaires.push({ id: uid(), ...vals, actif: true }));
               setShowAdd(false);
@@ -822,6 +839,7 @@ function GestionnairesSection({ data, update }) {
           <GestionnaireForm
             initial={data.gestionnaires.find((g) => g.id === editingGestionnaire)}
             sectionsProduction={data.sectionsProduction}
+            sites={data.sites}
             onSubmit={(vals) => {
               update((d) => { const g = d.gestionnaires.find((x) => x.id === editingGestionnaire); Object.assign(g, vals); });
               setEditingGestionnaire(null);
@@ -857,10 +875,11 @@ function GestionnairesSection({ data, update }) {
   );
 }
 
-function GestionnaireForm({ onSubmit, initial, sectionsProduction = [] }) {
+function GestionnaireForm({ onSubmit, initial, sectionsProduction = [], sites = [] }) {
   const [nom, setNom] = useState(initial?.nom || "");
   const [code, setCode] = useState(initial?.code || "");
   const [role, setRole] = useState(initial?.role || "complet");
+  const [siteId, setSiteId] = useState(initial?.siteId || (sites[0] ? sites[0].id : ""));
   const [sectionsAssignees, setSectionsAssignees] = useState(initial?.sectionsAssignees || []);
 
   const toggleSection = (id) => {
@@ -868,9 +887,16 @@ function GestionnaireForm({ onSubmit, initial, sectionsProduction = [] }) {
   };
 
   return (
-    <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); if (!nom || !code) return; onSubmit({ nom, code, role, sectionsAssignees: role === "technicien" ? sectionsAssignees : [] }); }}>
+    <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); if (!nom || !code) return; onSubmit({ nom, code, role, siteId: siteId || null, sectionsAssignees: role === "technicien" ? sectionsAssignees : [] }); }}>
       <Field label="Nom du gestionnaire"><Input value={nom} onChange={(e) => setNom(e.target.value)} /></Field>
       <Field label="Code d'entrée"><Input type="text" value={code} onChange={(e) => setCode(e.target.value)} placeholder="Ex. 1234" /></Field>
+      {sites.length > 1 && (
+        <Field label="Site">
+          <select className="w-full border border-[#DFD8C2] rounded-md px-3 py-2 text-sm bg-white" value={siteId} onChange={(e) => setSiteId(e.target.value)}>
+            {sites.map((s) => <option key={s.id} value={s.id}>{s.nom}</option>)}
+          </select>
+        </Field>
+      )}
       <Field label="Rôle">
         <select className="w-full border border-[#DFD8C2] rounded-md px-3 py-2 text-sm bg-white" value={role} onChange={(e) => setRole(e.target.value)}>
           {ROLES_GESTIONNAIRE.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
@@ -890,6 +916,170 @@ function GestionnaireForm({ onSubmit, initial, sectionsProduction = [] }) {
       )}
       <Button type="submit" variant="accent" className="w-full">{initial ? "Mettre à jour" : "Enregistrer"}</Button>
     </form>
+  );
+}
+
+function SitesSection({ data, update }) {
+  const [nouveauNom, setNouveauNom] = useState("");
+  const [nouveauCode, setNouveauCode] = useState("");
+  const [nouveauResponsableId, setNouveauResponsableId] = useState("");
+  const [editingId, setEditingId] = useState(null);
+  const [editingNom, setEditingNom] = useState("");
+  const [editingCode, setEditingCode] = useState("");
+  const [editingResponsableId, setEditingResponsableId] = useState("");
+
+  const gestionnaires = (data.gestionnaires || []).filter((g) => g.actif !== false);
+
+  const ajouter = () => {
+    if (!nouveauNom.trim()) return;
+    update((d) => { d.sites.push({ id: uid(), nom: nouveauNom.trim(), code: nouveauCode.trim(), responsableId: nouveauResponsableId || null, actif: true }); });
+    setNouveauNom(""); setNouveauCode(""); setNouveauResponsableId("");
+  };
+
+  const sauverEdition = (id) => {
+    if (!editingNom.trim()) return;
+    update((d) => {
+      const x = d.sites.find((y) => y.id === id);
+      x.nom = editingNom.trim(); x.code = editingCode.trim(); x.responsableId = editingResponsableId || null;
+    });
+    setEditingId(null);
+  };
+
+  return (
+    <div className="border-t border-[#DFD8C2] pt-4">
+      <h4 className="text-sm font-medium mb-2 flex items-center gap-1.5"><MapPin size={14} /> Sites de production</h4>
+      <p className="text-xs text-[#8B8974] mb-3">Si votre entreprise exploite plusieurs sites (ex. Site 1, Site 2), déclarez-les ici. Chaque département est ensuite rattaché à un site, et un responsable de site peut être désigné parmi vos gestionnaires.</p>
+
+      <div className="space-y-2 mb-3">
+        {data.sites.map((s) => {
+          const responsable = gestionnaires.find((g) => g.id === s.responsableId);
+          return (
+            <div key={s.id} className="flex items-center justify-between text-sm border border-[#DFD8C2] rounded-md px-3 py-2">
+              {editingId === s.id ? (
+                <div className="flex items-center gap-2 flex-1 flex-wrap">
+                  <Input value={editingNom} onChange={(e) => setEditingNom(e.target.value)} className="flex-1 min-w-[120px]" placeholder="Nom" />
+                  <Input value={editingCode} onChange={(e) => setEditingCode(e.target.value)} className="w-20" placeholder="Code" />
+                  <Select value={editingResponsableId} onChange={(e) => setEditingResponsableId(e.target.value)} className="w-44">
+                    <option value="">Responsable de site...</option>
+                    {gestionnaires.map((g) => <option key={g.id} value={g.id}>{g.nom}</option>)}
+                  </Select>
+                  <button onClick={() => sauverEdition(s.id)} className="text-[#8B5E3C] text-xs">OK</button>
+                </div>
+              ) : (
+                <>
+                  <div className="flex items-center gap-2">
+                    <span className={s.actif === false ? "text-[#8B8974] line-through" : ""}>{s.nom}</span>
+                    {s.code && <Badge tone="accent">{s.code}</Badge>}
+                    <span className="text-xs text-[#8B8974]">{responsable ? `· Responsable : ${responsable.nom}` : "· Aucun responsable désigné"}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button onClick={() => { setEditingId(s.id); setEditingNom(s.nom); setEditingCode(s.code || ""); setEditingResponsableId(s.responsableId || ""); }} className="text-xs text-[#8B5E3C]">Modifier</button>
+                    <button
+                      onClick={() => update((d) => { const x = d.sites.find((y) => y.id === s.id); x.actif = x.actif === false ? true : false; })}
+                      className="text-xs text-[#8B5E3C]"
+                    >{s.actif === false ? "Activer" : "Désactiver"}</button>
+                  </div>
+                </>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="flex gap-2 flex-wrap">
+        <Input value={nouveauNom} onChange={(e) => setNouveauNom(e.target.value)} placeholder="Nom du site" className="flex-1 min-w-[120px]" />
+        <Input value={nouveauCode} onChange={(e) => setNouveauCode(e.target.value)} placeholder="Code" className="w-20" />
+        <Select value={nouveauResponsableId} onChange={(e) => setNouveauResponsableId(e.target.value)} className="w-44">
+          <option value="">Responsable de site...</option>
+          {gestionnaires.map((g) => <option key={g.id} value={g.id}>{g.nom}</option>)}
+        </Select>
+        <Button variant="ghost" onClick={ajouter}><Plus size={14} /> Ajouter</Button>
+      </div>
+    </div>
+  );
+}
+
+function DepartementsSection({ data, update }) {
+  const [nouveauNom, setNouveauNom] = useState("");
+  const [nouveauCode, setNouveauCode] = useState("");
+  const [nouveauSiteId, setNouveauSiteId] = useState("");
+  const [editingId, setEditingId] = useState(null);
+  const [editingNom, setEditingNom] = useState("");
+  const [editingCode, setEditingCode] = useState("");
+  const [editingSiteId, setEditingSiteId] = useState("");
+
+  const sitesActifs = (data.sites || []).filter((s) => s.actif !== false);
+
+  const ajouter = () => {
+    if (!nouveauNom.trim()) return;
+    update((d) => { d.departements.push({ id: uid(), nom: nouveauNom.trim(), code: nouveauCode.trim(), siteId: nouveauSiteId || (d.sites[0] ? d.sites[0].id : null), actif: true }); });
+    setNouveauNom(""); setNouveauCode(""); setNouveauSiteId("");
+  };
+
+  const sauverEdition = (id) => {
+    if (!editingNom.trim()) return;
+    update((d) => {
+      const x = d.departements.find((y) => y.id === id);
+      x.nom = editingNom.trim(); x.code = editingCode.trim(); x.siteId = editingSiteId || null;
+    });
+    setEditingId(null);
+  };
+
+  return (
+    <div className="border-t border-[#DFD8C2] pt-4">
+      <h4 className="text-sm font-medium mb-2 flex items-center gap-1.5"><Boxes size={14} /> Départements</h4>
+      <p className="text-xs text-[#8B8974] mb-3">Ces départements permettent de classer les productions et les postes du personnel (production animale, production végétale, transformation, transport, boutique intrant, autres...). Chaque département est rattaché à un site et peut avoir un code analytique.</p>
+
+      <div className="space-y-2 mb-3">
+        {data.departements.map((item) => {
+          const site = sitesActifs.find((s) => s.id === item.siteId);
+          return (
+            <div key={item.id} className="flex items-center justify-between text-sm border border-[#DFD8C2] rounded-md px-3 py-2">
+              {editingId === item.id ? (
+                <div className="flex items-center gap-2 flex-1 flex-wrap">
+                  <Input value={editingNom} onChange={(e) => setEditingNom(e.target.value)} className="flex-1 min-w-[120px]" placeholder="Nom" />
+                  <Input value={editingCode} onChange={(e) => setEditingCode(e.target.value)} className="w-24" placeholder="Code" />
+                  <Select value={editingSiteId} onChange={(e) => setEditingSiteId(e.target.value)} className="w-40">
+                    <option value="">Aucun site</option>
+                    {sitesActifs.map((s) => <option key={s.id} value={s.id}>{s.nom}</option>)}
+                  </Select>
+                  <button onClick={() => sauverEdition(item.id)} className="text-[#8B5E3C] text-xs">OK</button>
+                </div>
+              ) : (
+                <>
+                  <div className="flex items-center gap-2">
+                    <span className={item.actif === false ? "text-[#8B8974] line-through" : ""}>{item.nom}</span>
+                    {item.code && <Badge tone="accent">{item.code}</Badge>}
+                    {sitesActifs.length > 1 && <span className="text-xs text-[#8B8974]">· {site ? site.nom : "Aucun site"}</span>}
+                    {item.actif === false && <Badge tone="default">Inactif</Badge>}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button onClick={() => { setEditingId(item.id); setEditingNom(item.nom); setEditingCode(item.code || ""); setEditingSiteId(item.siteId || ""); }} className="text-xs text-[#8B5E3C]">Modifier</button>
+                    <button
+                      onClick={() => update((d) => { const x = d.departements.find((y) => y.id === item.id); x.actif = x.actif === false ? true : false; })}
+                      className="text-xs text-[#8B5E3C]"
+                    >{item.actif === false ? "Activer" : "Désactiver"}</button>
+                    <button onClick={() => { if (confirm("Supprimer ce département ?")) update((d) => { d.departements = d.departements.filter((x) => x.id !== item.id); }); }} className="text-[#C7C2A8] hover:text-[#A6402A]">
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="flex gap-2 flex-wrap">
+        <Input value={nouveauNom} onChange={(e) => setNouveauNom(e.target.value)} placeholder="Nom" className="flex-1 min-w-[120px]" />
+        <Input value={nouveauCode} onChange={(e) => setNouveauCode(e.target.value)} placeholder="Code" className="w-24" />
+        <Select value={nouveauSiteId} onChange={(e) => setNouveauSiteId(e.target.value)} className="w-40">
+          <option value="">Site...</option>
+          {sitesActifs.map((s) => <option key={s.id} value={s.id}>{s.nom}</option>)}
+        </Select>
+        <Button variant="ghost" onClick={ajouter}><Plus size={14} /> Ajouter</Button>
+      </div>
+    </div>
   );
 }
 
@@ -1523,11 +1713,9 @@ function ParametresModal({ data, update, onClose }) {
 
         <GestionnairesSection data={data} update={update} />
 
-        <ListeAvecCodeSection
-          data={data} update={update} champ="departements" icon={Boxes}
-          titre="Départements"
-          description="Ces départements permettent de classer les productions et les postes du personnel (production animale, production végétale, transformation, transport, boutique intrant, autres...). Chaque département peut avoir un code analytique."
-        />
+        <SitesSection data={data} update={update} />
+
+        <DepartementsSection data={data} update={update} />
 
         <SectionsProductionSection data={data} update={update} />
 
