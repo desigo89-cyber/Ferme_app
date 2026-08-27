@@ -4,7 +4,7 @@ import {
   Plus, X, Trash2, AlertTriangle, Calendar, ChevronRight, Heart, Baby, Milk,
   FileText, Landmark, Banknote, Smartphone, Lock, KeyRound, Eye, EyeOff, BarChart3, Package, TrendingUp, Settings,
   Users, Share2, Palette, Image as ImageIcon, Coins, CalendarOff, UserCircle, Building2,
-  PiggyBank, Percent, HandCoins, Contact, Phone, Mail, PenTool, Send, Check, ClipboardList, MapPin
+  PiggyBank, Percent, HandCoins, Contact, Phone, Mail, PenTool, Send, Check, ClipboardList
 } from "lucide-react";
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
@@ -12,9 +12,7 @@ import {
 } from "recharts";
 import { storage } from "./storage.js";
 import { partagerSauvegarde, partagerDocument } from "./share.js";
-import { choisirContactTelephone, enregistrerDansRepertoire, surAppareilNatif } from "./contacts.js";
 import * as sync from "./sync.js";
-import EcranTechnicien from "./EcranTechnicien.jsx";
 
 // ---------- Design tokens ----------
 // bg (paper): #EFEAD9 | surface: #FFFFFF | ink: #232620 | muted: #6E6B58
@@ -48,13 +46,9 @@ const emptyState = {
   connexions: [],
   tiers: [],
   departements: [],
-  sites: [],
   categoriesDepenses: [],
   sectionsProduction: [],
   productions: [],
-  saisiesTechnicien: [],
-  migrationDepartementsSectionsV2: false,
-  migrationSitesV1: false,
   security: { password: null },
 };
 
@@ -73,29 +67,32 @@ const DOC_LABELS = { recu: "Reçu", facture: "Facture", bordereau_reception: "Bo
 
 const CONTRAT_LABELS = { cdi: "CDI", cdd: "CDD", stage: "Stage", essai: "Période d'essai", prestation: "Prestation" };
 
-const NIVEAUX_AVEC_DEPARTEMENT = ["Ouvrier", "Technicien de production", "Responsable de département"];
-// Intitulés de poste suggérés (anciennement la liste "niveau hiérarchique").
-const POSTES_SUGGERES = [
+const HIERARCHIE_POSTES = [
   "Ouvrier",
-  "Chauffeur",
-  "Coursier",
-  "Gardien",
   "Agent de livraison",
   "Poste de vente",
   "Technicien de production",
   "Responsable de département",
   "Responsable de site",
-  "GRH (Responsable des ressources humaines)",
-  "Administrateur (gérant de l'entreprise)",
+  "Gérant / Responsable de l'entreprise",
   "Promoteur de l'entreprise",
 ];
-// Niveau hiérarchique générique (indépendant de l'intitulé précis du poste).
-const NIVEAUX_HIERARCHIQUES = [
-  "Exécution",
-  "Supervision",
-  "Direction",
-  "Externe (promoteur / investisseur)",
+const CATEGORIES_PERSONNEL = [
+  { id: "terrain", label: "Terrain" },
+  { id: "appui", label: "Appui" },
+  { id: "transversale", label: "Transversale" },
+  { id: "administration", label: "Administration" },
 ];
+const CATEGORIE_PAR_POSTE = {
+  "Ouvrier": "terrain",
+  "Technicien de production": "terrain",
+  "Agent de livraison": "appui",
+  "Poste de vente": "appui",
+  "Responsable de site": "transversale",
+  "Promoteur de l'entreprise": "transversale",
+  "Responsable de département": "administration",
+  "Gérant / Responsable de l'entreprise": "administration",
+};
 const COMPETENCES_SUGGESTIONS = [
   "Agronome", "Comptable", "Chauffeur", "Ingénieur", "Gestionnaire", "Vétérinaire", "Commercial", "Technicien",
 ];
@@ -104,9 +101,10 @@ const DOC_PERSO_LABELS = { cv: "CV", attestation: "Attestation", contrat: "Contr
 const DEPARTEMENTS_DEFAUT = [
   { nom: "Production animale", code: "PA" },
   { nom: "Production végétale", code: "PV" },
-  { nom: "Transformation", code: "TRF" },
-  { nom: "Transport de produits agricoles", code: "TPA" },
-  { nom: "Boutique intrant agricole", code: "BIA" },
+  { nom: "Aquaculture", code: "AQ" },
+  { nom: "Apiculture", code: "AP" },
+  { nom: "Transport de produits agricoles", code: "TR" },
+  { nom: "Boutique intrant agricole", code: "BI" },
   { nom: "Autres activités", code: "AU" },
 ];
 
@@ -128,196 +126,17 @@ const CATEGORIES_DEPENSES_DEFAUT = [
   { nom: "Entretien matériel", type: "fixe", code: "CHF-10" },
 ];
 
-// Sections = unités de production rattachées à un département (departementCode
-// résolu vers un departementId au moment du seed / de la migration).
 const SECTIONS_PRODUCTION_DEFAUT = [
-  { nom: "Pondeuse", code: "SEC-01", departementCode: "PA" },
-  { nom: "Chair", code: "SEC-02", departementCode: "PA" },
-  { nom: "Porc", code: "SEC-03", departementCode: "PA" },
-  { nom: "Autres volailles", code: "SEC-04", departementCode: "PA" },
-  { nom: "Bovin", code: "SEC-05", departementCode: "PA" },
-  { nom: "Ovin", code: "SEC-06", departementCode: "PA" },
-  { nom: "Caprin", code: "SEC-07", departementCode: "PA" },
-  { nom: "Équin", code: "SEC-08", departementCode: "PA" },
-  { nom: "Asin", code: "SEC-09", departementCode: "PA" },
-  { nom: "Apiculture", code: "SEC-10", departementCode: "PA" },
-  { nom: "Pisciculture", code: "SEC-11", departementCode: "PA" },
-  { nom: "Maraîchage", code: "SEC-12", departementCode: "PV" },
-  { nom: "Céréales", code: "SEC-13", departementCode: "PV" },
-  { nom: "Agroforesterie", code: "SEC-14", departementCode: "PV" },
-  { nom: "Pépinière", code: "SEC-15", departementCode: "PV" },
-  { nom: "Semence", code: "SEC-16", departementCode: "PV" },
-  { nom: "Transformation artisanale de produits locaux", code: "SEC-17", departementCode: "TRF" },
-  { nom: "Pâtisserie industrielle", code: "SEC-18", departementCode: "TRF" },
-  { nom: "Restauration", code: "SEC-19", departementCode: "TRF" },
-  { nom: "Compostage", code: "SEC-20", departementCode: "PV" },
+  { nom: "Maraîchage", code: "SEC-01" },
+  { nom: "Culture céréalière", code: "SEC-02" },
+  { nom: "Arboriculture", code: "SEC-03" },
+  { nom: "Pondeuse", code: "SEC-04" },
+  { nom: "Chair", code: "SEC-05" },
+  { nom: "Pisciculture", code: "SEC-06" },
+  { nom: "Apiculture", code: "SEC-07" },
+  { nom: "Transport", code: "SEC-08" },
+  { nom: "Vente", code: "SEC-09" },
 ];
-const ROLES_GESTIONNAIRE = [
-  { value: "complet", label: "Accès complet (comme aujourd'hui)" },
-  { value: "technicien", label: "Technicien de section" },
-  { value: "responsable_departement", label: "Responsable de département" },
-  { value: "caisse", label: "Caisse / poste de vente" },
-  { value: "administration", label: "Administrateur (gérant de l'entreprise)" },
-  { value: "promoteur", label: "Promoteur (lecture seule)" },
-];
-
-// Configuration des champs de saisie journalière par section d'élevage.
-// "commun" = champs partagés par toutes les sections animales.
-// "reproduction" = bloc spécifique à l'espèce (terminologie adaptée), vide = pas de reproduction.
-const CHAMPS_ELEVAGE_COMMUN = [
-  { key: "poids", label: "Poids moyen (kg)", type: "number", step: "0.01", icon: "Scale" },
-  { key: "alimentJour", label: "Aliment consommé (kg)", type: "number", icon: "Wheat" },
-  { key: "stock", label: "Stock (têtes)", type: "number", icon: "Package" },
-  { key: "entrees", label: "Entrées", type: "number", icon: "LogIn" },
-  { key: "sorties", label: "Sorties", type: "number", icon: "LogOut" },
-  { key: "malades", label: "Malades", type: "number", icon: "FirstAidKit" },
-  { key: "morts", label: "Morts", type: "number", icon: "AlertTriangle" },
-  { key: "vendus", label: "Vendus", type: "number", icon: "Coins" },
-  { key: "transferes", label: "Transférés", type: "number", icon: "ArrowsExchange" },
-  { key: "perdus", label: "Perdus", type: "number", icon: "AlertCircle" },
-  { key: "traitement", label: "Traitement administré", type: "text", icon: "Syringe" },
-];
-
-// Champs communs aux sections de production végétale
-const CHAMPS_VEGETAL_COMMUN = [
-  { key: "speculation", label: "Spéculation (culture)", type: "text", icon: "Sprout" },
-  { key: "superficie", label: "Superficie (ha)", type: "number", step: "0.01", icon: "Map" },
-  { key: "densite", label: "Densité de semis", type: "text", icon: "Grid" },
-  { key: "labour", label: "Labour effectué", type: "text", icon: "Tractor" },
-  { key: "semis", label: "Semis effectué", type: "text", icon: "Sprout" },
-  { key: "semences", label: "Semences utilisées (kg)", type: "number", icon: "Wheat" },
-  { key: "sarclages", label: "Nombre de sarclages", type: "number", icon: "Scissors" },
-  { key: "engraisOrganique", label: "Engrais organique utilisé (kg)", type: "number", icon: "Sprout" },
-  { key: "engraisChimique", label: "Engrais chimique utilisé (kg)", type: "number", icon: "Package" },
-  { key: "mainOeuvrePayee", label: "Nombre de mains d'œuvre payées", type: "number", icon: "Users" },
-  { key: "rendement", label: "Rendement (kg/ha)", type: "number", icon: "TrendingUp" },
-  { key: "traitement", label: "Traitement phytosanitaire", type: "text", icon: "Syringe" },
-];
-
-// Champs communs aux sections de transformation/production artisanale
-const CHAMPS_TRANSFORMATION_COMMUN = [
-  { key: "matierePremiere", label: "Matière première utilisée (kg)", type: "number", icon: "Package" },
-  { key: "quantiteProduite", label: "Quantité produite", type: "number", icon: "Boxes" },
-  { key: "quantiteVendue", label: "Quantité vendue", type: "number", icon: "Coins" },
-  { key: "quantiteStockee", label: "Quantité stockée", type: "number", icon: "Package" },
-  { key: "pertes", label: "Pertes / déchets", type: "number", icon: "AlertTriangle" },
-  { key: "mainOeuvrePayee", label: "Nombre de mains d'œuvre payées", type: "number", icon: "Users" },
-];
-
-// Champs de la section compostage/fertilisation
-const CHAMPS_COMPOSTAGE = [
-  { key: "matiereVerte", label: "Matière verte (kg)", type: "number", icon: "Sprout" },
-  { key: "matiereAnimale", label: "Matière animale (kg)", type: "number", icon: "PawPrint" },
-  { key: "cendre", label: "Cendre (kg)", type: "number", icon: "Package" },
-  { key: "terreauLimon", label: "Terreau ou limon (kg)", type: "number", icon: "Package" },
-  { key: "eau", label: "Eau (litres)", type: "number", icon: "Droplet" },
-  { key: "compostSolideProduit", label: "Compost solide produit (kg)", type: "number", icon: "Boxes" },
-  { key: "engraisLiquideProduit", label: "Engrais liquide produit (litres)", type: "number", step: "0.1", icon: "Droplet" },
-  { key: "quantiteTotaleProduite", label: "Quantité totale produite", type: "number", icon: "Boxes" },
-  { key: "quantiteStockee", label: "Quantité stockée", type: "number", icon: "Package" },
-  { key: "quantiteVendue", label: "Quantité vendue", type: "number", icon: "Coins" },
-  { key: "quantiteTransferee", label: "Quantité transférée", type: "number", icon: "ArrowsExchange" },
-  { key: "mainOeuvrePayee", label: "Nombre de mains d'œuvre payées", type: "number", icon: "Users" },
-];
-
-// Libellé du champ "spéculation" adapté par section végétale (comme la reproduction pour l'élevage)
-const LIBELLE_SPECULATION_PAR_SECTION = {
-  "Maraîchage": "Type de produit maraîcher",
-  "Céréales": "Type de céréale",
-  "Agroforesterie": "Type d'arbre produit",
-  "Pépinière": "Type de plant/arbre en pépinière",
-  "Semence": "Type de semence produite",
-};
-
-function getChampsVegetal(nomSection) {
-  const libelle = LIBELLE_SPECULATION_PAR_SECTION[nomSection] || "Spéculation (culture)";
-  return CHAMPS_VEGETAL_COMMUN.map((c) => c.key === "speculation" ? { ...c, label: libelle } : c);
-}
-
-const SECTIONS_TRANSFORMATION = ["Transformation artisanale de produits locaux", "Pâtisserie industrielle", "Restauration"];
-
-const SECTIONS_VEGETALES = ["Maraîchage", "Céréales", "Agroforesterie", "Pépinière", "Semence"];
-
-const FIELD_CONFIG_PAR_SECTION = {
-  "Pondeuse": { reproduction: [
-    { key: "oeufsPondus", label: "Œufs pondus (jour)", type: "number" },
-    { key: "tauxPonte", label: "Taux de ponte (%)", type: "number", step: "0.1" },
-    { key: "oeufsCouves", label: "Œufs mis en couvaison", type: "number" },
-    { key: "eclosions", label: "Éclosions", type: "number" },
-  ]},
-  "Chair": { reproduction: [] },
-  "Porc": { reproduction: [
-    { key: "saillie", label: "Saillies", type: "number" },
-    { key: "gestation", label: "Femelles gestantes", type: "number" },
-    { key: "miseBas", label: "Mises bas", type: "number" },
-    { key: "sevrage", label: "Sevrages", type: "number" },
-  ]},
-  "Bovin": { reproduction: [
-    { key: "saillie", label: "Saillies / inséminations", type: "number" },
-    { key: "gestation", label: "Femelles gestantes", type: "number" },
-    { key: "miseBas", label: "Mises bas", type: "number" },
-    { key: "sevrage", label: "Sevrages", type: "number" },
-  ]},
-  "Ovin": { reproduction: [
-    { key: "saillie", label: "Saillies", type: "number" },
-    { key: "gestation", label: "Femelles gestantes", type: "number" },
-    { key: "miseBas", label: "Mises bas", type: "number" },
-    { key: "sevrage", label: "Sevrages", type: "number" },
-  ]},
-  "Caprin": { reproduction: [
-    { key: "saillie", label: "Saillies", type: "number" },
-    { key: "gestation", label: "Femelles gestantes", type: "number" },
-    { key: "miseBas", label: "Mises bas", type: "number" },
-    { key: "sevrage", label: "Sevrages", type: "number" },
-  ]},
-  "Autres volailles": { reproduction: [
-    { key: "oeufsPondus", label: "Œufs pondus (jour)", type: "number" },
-    { key: "oeufsCouves", label: "Œufs mis en couvaison", type: "number" },
-    { key: "eclosions", label: "Éclosions", type: "number" },
-  ]},
-  "Équin": { reproduction: [
-    { key: "saillie", label: "Saillies", type: "number" },
-    { key: "gestation", label: "Femelles gestantes", type: "number" },
-    { key: "miseBas", label: "Mises bas (poulinages)", type: "number" },
-    { key: "sevrage", label: "Sevrages", type: "number" },
-  ]},
-  "Asin": { reproduction: [
-    { key: "saillie", label: "Saillies", type: "number" },
-    { key: "gestation", label: "Femelles gestantes", type: "number" },
-    { key: "miseBas", label: "Mises bas", type: "number" },
-    { key: "sevrage", label: "Sevrages", type: "number" },
-  ]},
-  "Apiculture": { reproduction: [
-    { key: "essaimage", label: "Essaimages", type: "number" },
-    { key: "nombreRuches", label: "Nombre de ruches actives", type: "number" },
-    { key: "mielRecolte", label: "Miel récolté (litres)", type: "number", step: "0.1" },
-    { key: "mielVendu", label: "Miel vendu (litres)", type: "number", step: "0.1" },
-    { key: "mielStocke", label: "Miel stocké (litres)", type: "number", step: "0.1" },
-  ]},
-  "Pisciculture": { reproduction: [
-    { key: "empoissonnement", label: "Alevins mis en bassin", type: "number" },
-    { key: "recoltePoisson", label: "Récolte (kg)", type: "number" },
-  ]},
-};
-
-// Sections sans configuration détaillée -> formulaire simple générique
-const CHAMPS_SIMPLES_DEFAUT = [
-  { key: "activite", label: "Activité réalisée", type: "textarea" },
-  { key: "quantiteRecoltee", label: "Quantité récoltée", type: "number" },
-  { key: "quantiteLivree", label: "Quantité livrée à la vente", type: "number" },
-  { key: "morts", label: "Animaux morts", type: "number" },
-  { key: "produitsUtilises", label: "Produits phytosanitaires / vétérinaires utilisés", type: "textarea" },
-];
-
-function getConfigSection(nomSection) {
-  const config = FIELD_CONFIG_PAR_SECTION[nomSection];
-  if (config) return { commun: CHAMPS_ELEVAGE_COMMUN, reproduction: config.reproduction };
-  if (SECTIONS_VEGETALES.includes(nomSection)) return { commun: getChampsVegetal(nomSection), reproduction: null };
-  if (SECTIONS_TRANSFORMATION.includes(nomSection)) return { commun: CHAMPS_TRANSFORMATION_COMMUN, reproduction: null };
-  if (nomSection === "Compostage") return { commun: CHAMPS_COMPOSTAGE, reproduction: null };
-  return { commun: null, reproduction: null, simple: CHAMPS_SIMPLES_DEFAUT };
-}
-
 const CHARGE_LABELS = { variable: "Charge variable", fixe: "Charge fixe", sociale: "Charge sociale", salariale: "Salaire", autre: "Autre" };
 const DEVISES = ["FCFA", "EUR", "USD", "GNF", "MAD", "CDF"];
 
@@ -331,15 +150,8 @@ const THEMES = {
 
 const THEME_LABELS = { vert: "Vert", bleu: "Bleu", brun: "Brun", vertBlanc: "Vert — corps blanc", bleuBlanc: "Bleu — corps blanc" };
 
-function formatNombre(n) {
-  const num = Number(n || 0);
-  const [entier, decimales] = num.toFixed(2).split(".");
-  const entierAvecEspaces = entier.replace(/\B(?=(\d{3})+(?!\d))/g, " ");
-  return decimales === "00" ? entierAvecEspaces : `${entierAvecEspaces},${decimales}`;
-}
-
 function money(amount, devise) {
-  return `${formatNombre(amount)} ${devise || "FCFA"}`;
+  return `${Number(amount || 0).toLocaleString("fr-FR")} ${devise || "FCFA"}`;
 }
 
 // ---------- Small UI primitives ----------
@@ -443,75 +255,14 @@ export default function FarmApp() {
       try {
         const res = await storage.get(STORAGE_KEY);
         const seed = (merged) => {
-          if (!merged.sites || merged.sites.length === 0) {
-            merged.sites = [{ id: uid(), nom: "Site principal", code: "S1", responsableId: null, actif: true }];
-          }
-          const sitePrincipalId = merged.sites[0].id;
           if (!merged.departements || merged.departements.length === 0) {
-            merged.departements = DEPARTEMENTS_DEFAUT.map((d) => ({ id: uid(), ...d, siteId: sitePrincipalId, actif: true }));
+            merged.departements = DEPARTEMENTS_DEFAUT.map((d) => ({ id: uid(), ...d, actif: true }));
           }
           if (!merged.categoriesDepenses || merged.categoriesDepenses.length === 0) {
             merged.categoriesDepenses = CATEGORIES_DEPENSES_DEFAUT.map((c) => ({ id: uid(), ...c, actif: true }));
           }
           if (!merged.sectionsProduction || merged.sectionsProduction.length === 0) {
-            merged.sectionsProduction = SECTIONS_PRODUCTION_DEFAUT.map((s) => {
-              const { departementCode, ...rest } = s;
-              const dep = merged.departements.find((d) => d.code === departementCode);
-              return { id: uid(), ...rest, departementId: dep ? dep.id : null, actif: true };
-            });
-          }
-          // Migration unique : les départements Aquaculture/Apiculture deviennent des
-          // sections de Production animale, un département Transformation est ajouté,
-          // et les sections sont désormais rattachées à un département précis.
-          if (!merged.migrationDepartementsSectionsV2) {
-            const dejaCorrect = merged.departements.some((d) => d.code === "TRF")
-              && !merged.departements.some((d) => d.code === "AQ" || d.code === "AP");
-            if (!dejaCorrect) {
-              const anciens = merged.departements;
-              const paAnc = anciens.find((d) => d.nom === "Production animale");
-              const pvAnc = anciens.find((d) => d.nom === "Production végétale");
-              const nouveauxDeps = DEPARTEMENTS_DEFAUT.map((d) => {
-                const existant = anciens.find((a) => a.nom === d.nom);
-                return existant ? { ...existant, code: d.code } : { id: uid(), ...d, actif: true };
-              });
-              const paId = nouveauxDeps.find((d) => d.nom === "Production animale").id;
-              const pvId = nouveauxDeps.find((d) => d.nom === "Production végétale").id;
-              const trfId = nouveauxDeps.find((d) => d.nom === "Transformation").id;
-              const mapDepartementId = {};
-              if (paAnc) mapDepartementId[paAnc.id] = paId;
-              if (pvAnc) mapDepartementId[pvAnc.id] = pvId;
-              const anciennesSectionsParNom = {};
-              (merged.sectionsProduction || []).forEach((s) => { anciennesSectionsParNom[s.nom] = s; });
-              const nouvellesSections = SECTIONS_PRODUCTION_DEFAUT.map((s) => {
-                const existant = anciennesSectionsParNom[s.nom];
-                const depId = s.departementCode === "PA" ? paId : s.departementCode === "PV" ? pvId : trfId;
-                return existant ? { ...existant, code: s.code, departementId: depId } : { id: uid(), nom: s.nom, code: s.code, departementId: depId, actif: true };
-              });
-              // Conserve les sections personnalisées de l'utilisateur non reconnues, en tentant de reporter leur département.
-              (merged.sectionsProduction || []).forEach((s) => {
-                if (!SECTIONS_PRODUCTION_DEFAUT.some((d) => d.nom === s.nom)) {
-                  nouvellesSections.push({ ...s, departementId: mapDepartementId[s.departementId] || s.departementId || null });
-                }
-              });
-              merged.departements = nouveauxDeps;
-              merged.sectionsProduction = nouvellesSections;
-              // Reporte les anciens identifiants de département (Aquaculture/Apiculture → Production animale) sur employés/transactions/productions.
-              const reporterDep = (id) => (id && mapDepartementId[id]) ? mapDepartementId[id] : id;
-              (merged.employes || []).forEach((e) => { if (e.departementId) e.departementId = reporterDep(e.departementId); });
-              (merged.transactions || []).forEach((t) => { if (t.departementId) t.departementId = reporterDep(t.departementId); });
-              (merged.productions || []).forEach((p) => { if (p.departementId) p.departementId = reporterDep(p.departementId); });
-            }
-            merged.migrationDepartementsSectionsV2 = true;
-          }
-          // Migration : création d'un site principal par défaut, et rattachement
-          // de tous les départements existants à ce site (gestion multi-sites).
-          if (!merged.migrationSitesV1) {
-            if (!merged.sites || merged.sites.length === 0) {
-              const sitePrincipalId = uid();
-              merged.sites = [{ id: sitePrincipalId, nom: "Site principal", code: "S1", responsableId: null, actif: true }];
-              merged.departements = (merged.departements || []).map((d) => ({ ...d, siteId: d.siteId || sitePrincipalId }));
-            }
-            merged.migrationSitesV1 = true;
+            merged.sectionsProduction = SECTIONS_PRODUCTION_DEFAUT.map((s) => ({ id: uid(), ...s, actif: true }));
           }
           return merged;
         };
@@ -564,7 +315,6 @@ export default function FarmApp() {
     { id: "contacts", label: "Fournisseurs & clients", icon: Contact },
     { id: "documents", label: "Documents", icon: FileText },
     { id: "rapport", label: "Rapport", icon: BarChart3 },
-    { id: "personnel", label: "Personnel", icon: Users },
     { id: "taches", label: "Tâches", icon: ListChecks },
   ];
 
@@ -605,18 +355,6 @@ export default function FarmApp() {
     );
   }
 
-  const gestionnaireConnecte = data.gestionnaires.find((g) => g.id === currentGestionnaireId);
-  if (gestionnaireConnecte && gestionnaireConnecte.role === "technicien") {
-    return (
-      <EcranTechnicien
-        data={data}
-        update={update}
-        gestionnaire={gestionnaireConnecte}
-        onDeconnexion={() => { setUnlocked(false); setCurrentGestionnaireId(null); }}
-      />
-    );
-  }
-
   return (
     <div className="min-h-screen bg-[var(--color-bg)] text-[#232620]" style={themeVars}>
       <header className="bg-[var(--color-primary)] text-[#F3EFE2] px-4 sm:px-6 py-4">
@@ -634,6 +372,18 @@ export default function FarmApp() {
                 <AlertTriangle size={14} /> Sauvegarde impossible
               </span>
             )}
+            <button
+              onClick={() => setTab("personnel")}
+              className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm transition-colors ${
+                tab === "personnel"
+                  ? "bg-[var(--color-accent)] text-white"
+                  : "bg-white/10 text-[var(--color-nav)] hover:text-white hover:bg-white/20"
+              }`}
+              title="Personnel"
+            >
+              <Users size={16} />
+              <span className="hidden sm:inline">Personnel</span>
+            </button>
             <button onClick={() => setShowSecurity(true)} className="text-[var(--color-nav)] hover:text-white" title="Paramètres">
               <Settings size={18} />
             </button>
@@ -785,7 +535,6 @@ function LockScreen({ nomFerme, password, gestionnaires = [], onUnlock }) {
 
 function GestionnairesSection({ data, update }) {
   const [showAdd, setShowAdd] = useState(false);
-  const [editingGestionnaire, setEditingGestionnaire] = useState(null);
   const [showJournal, setShowJournal] = useState(false);
 
   const journalParJour = useMemo(() => {
@@ -819,7 +568,6 @@ function GestionnairesSection({ data, update }) {
                   onClick={() => update((d) => { const x = d.gestionnaires.find((y) => y.id === g.id); x.actif = x.actif === false ? true : false; })}
                   className="text-xs text-[#8B5E3C]"
                 >{g.actif === false ? "Activer" : "Désactiver"}</button>
-                <button onClick={() => setEditingGestionnaire(g.id)} className="text-xs text-[#8B5E3C]">Modifier</button>
                 <button onClick={() => { if (confirm("Supprimer ce gestionnaire ?")) update((d) => { d.gestionnaires = d.gestionnaires.filter((x) => x.id !== g.id); }); }} className="text-[#C7C2A8] hover:text-[#A6402A]">
                   <Trash2 size={14} />
                 </button>
@@ -837,25 +585,9 @@ function GestionnairesSection({ data, update }) {
       {showAdd && (
         <Modal title="Nouveau gestionnaire" onClose={() => setShowAdd(false)}>
           <GestionnaireForm
-            sectionsProduction={data.sectionsProduction}
-            sites={data.sites}
             onSubmit={(vals) => {
               update((d) => d.gestionnaires.push({ id: uid(), ...vals, actif: true }));
               setShowAdd(false);
-            }}
-          />
-        </Modal>
-      )}
-
-      {editingGestionnaire && (
-        <Modal title="Modifier le gestionnaire" onClose={() => setEditingGestionnaire(null)}>
-          <GestionnaireForm
-            initial={data.gestionnaires.find((g) => g.id === editingGestionnaire)}
-            sectionsProduction={data.sectionsProduction}
-            sites={data.sites}
-            onSubmit={(vals) => {
-              update((d) => { const g = d.gestionnaires.find((x) => x.id === editingGestionnaire); Object.assign(g, vals); });
-              setEditingGestionnaire(null);
             }}
           />
         </Modal>
@@ -888,211 +620,15 @@ function GestionnairesSection({ data, update }) {
   );
 }
 
-function GestionnaireForm({ onSubmit, initial, sectionsProduction = [], sites = [] }) {
-  const [nom, setNom] = useState(initial?.nom || "");
-  const [code, setCode] = useState(initial?.code || "");
-  const [role, setRole] = useState(initial?.role || "complet");
-  const [siteId, setSiteId] = useState(initial?.siteId || (sites[0] ? sites[0].id : ""));
-  const [sectionsAssignees, setSectionsAssignees] = useState(initial?.sectionsAssignees || []);
-
-  const toggleSection = (id) => {
-    setSectionsAssignees((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
-  };
-
+function GestionnaireForm({ onSubmit }) {
+  const [nom, setNom] = useState("");
+  const [code, setCode] = useState("");
   return (
-    <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); if (!nom || !code) return; onSubmit({ nom, code, role, siteId: siteId || null, sectionsAssignees: role === "technicien" ? sectionsAssignees : [] }); }}>
+    <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); if (!nom || !code) return; onSubmit({ nom, code }); }}>
       <Field label="Nom du gestionnaire"><Input value={nom} onChange={(e) => setNom(e.target.value)} /></Field>
       <Field label="Code d'entrée"><Input type="text" value={code} onChange={(e) => setCode(e.target.value)} placeholder="Ex. 1234" /></Field>
-      {sites.length > 1 && (
-        <Field label="Site">
-          <select className="w-full border border-[#DFD8C2] rounded-md px-3 py-2 text-sm bg-white" value={siteId} onChange={(e) => setSiteId(e.target.value)}>
-            {sites.map((s) => <option key={s.id} value={s.id}>{s.nom}</option>)}
-          </select>
-        </Field>
-      )}
-      <Field label="Rôle">
-        <select className="w-full border border-[#DFD8C2] rounded-md px-3 py-2 text-sm bg-white" value={role} onChange={(e) => setRole(e.target.value)}>
-          {ROLES_GESTIONNAIRE.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
-        </select>
-      </Field>
-      {role === "technicien" && (
-        <Field label="Sections gérées par ce technicien">
-          <div className="space-y-1.5 max-h-48 overflow-y-auto border border-[#DFD8C2] rounded-md p-2">
-            {sectionsProduction.filter((s) => s.actif !== false).map((s) => (
-              <label key={s.id} className="flex items-center gap-2 text-sm">
-                <input type="checkbox" checked={sectionsAssignees.includes(s.id)} onChange={() => toggleSection(s.id)} />
-                {s.nom}
-              </label>
-            ))}
-          </div>
-        </Field>
-      )}
-      <Button type="submit" variant="accent" className="w-full">{initial ? "Mettre à jour" : "Enregistrer"}</Button>
+      <Button type="submit" variant="accent" className="w-full">Enregistrer</Button>
     </form>
-  );
-}
-
-function SitesSection({ data, update }) {
-  const [nouveauNom, setNouveauNom] = useState("");
-  const [nouveauCode, setNouveauCode] = useState("");
-  const [nouveauResponsableId, setNouveauResponsableId] = useState("");
-  const [editingId, setEditingId] = useState(null);
-  const [editingNom, setEditingNom] = useState("");
-  const [editingCode, setEditingCode] = useState("");
-  const [editingResponsableId, setEditingResponsableId] = useState("");
-
-  const gestionnaires = (data.gestionnaires || []).filter((g) => g.actif !== false);
-
-  const ajouter = () => {
-    if (!nouveauNom.trim()) return;
-    update((d) => { d.sites.push({ id: uid(), nom: nouveauNom.trim(), code: nouveauCode.trim(), responsableId: nouveauResponsableId || null, actif: true }); });
-    setNouveauNom(""); setNouveauCode(""); setNouveauResponsableId("");
-  };
-
-  const sauverEdition = (id) => {
-    if (!editingNom.trim()) return;
-    update((d) => {
-      const x = d.sites.find((y) => y.id === id);
-      x.nom = editingNom.trim(); x.code = editingCode.trim(); x.responsableId = editingResponsableId || null;
-    });
-    setEditingId(null);
-  };
-
-  return (
-    <div className="border-t border-[#DFD8C2] pt-4">
-      <h4 className="text-sm font-medium mb-2 flex items-center gap-1.5"><MapPin size={14} /> Sites de production</h4>
-      <p className="text-xs text-[#8B8974] mb-3">Si votre entreprise exploite plusieurs sites (ex. Site 1, Site 2), déclarez-les ici. Chaque département est ensuite rattaché à un site, et un responsable de site peut être désigné parmi vos gestionnaires.</p>
-
-      <div className="space-y-2 mb-3">
-        {data.sites.map((s) => {
-          const responsable = gestionnaires.find((g) => g.id === s.responsableId);
-          return (
-            <div key={s.id} className="flex items-center justify-between text-sm border border-[#DFD8C2] rounded-md px-3 py-2">
-              {editingId === s.id ? (
-                <div className="flex items-center gap-2 flex-1 flex-wrap">
-                  <Input value={editingNom} onChange={(e) => setEditingNom(e.target.value)} className="flex-1 min-w-[120px]" placeholder="Nom" />
-                  <Input value={editingCode} onChange={(e) => setEditingCode(e.target.value)} className="w-20" placeholder="Code" />
-                  <Select value={editingResponsableId} onChange={(e) => setEditingResponsableId(e.target.value)} className="w-44">
-                    <option value="">Responsable de site...</option>
-                    {gestionnaires.map((g) => <option key={g.id} value={g.id}>{g.nom}</option>)}
-                  </Select>
-                  <button onClick={() => sauverEdition(s.id)} className="text-[#8B5E3C] text-xs">OK</button>
-                </div>
-              ) : (
-                <>
-                  <div className="flex items-center gap-2">
-                    <span className={s.actif === false ? "text-[#8B8974] line-through" : ""}>{s.nom}</span>
-                    {s.code && <Badge tone="accent">{s.code}</Badge>}
-                    <span className="text-xs text-[#8B8974]">{responsable ? `· Responsable : ${responsable.nom}` : "· Aucun responsable désigné"}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <button onClick={() => { setEditingId(s.id); setEditingNom(s.nom); setEditingCode(s.code || ""); setEditingResponsableId(s.responsableId || ""); }} className="text-xs text-[#8B5E3C]">Modifier</button>
-                    <button
-                      onClick={() => update((d) => { const x = d.sites.find((y) => y.id === s.id); x.actif = x.actif === false ? true : false; })}
-                      className="text-xs text-[#8B5E3C]"
-                    >{s.actif === false ? "Activer" : "Désactiver"}</button>
-                  </div>
-                </>
-              )}
-            </div>
-          );
-        })}
-      </div>
-
-      <div className="flex gap-2 flex-wrap">
-        <Input value={nouveauNom} onChange={(e) => setNouveauNom(e.target.value)} placeholder="Nom du site" className="flex-1 min-w-[120px]" />
-        <Input value={nouveauCode} onChange={(e) => setNouveauCode(e.target.value)} placeholder="Code" className="w-20" />
-        <Select value={nouveauResponsableId} onChange={(e) => setNouveauResponsableId(e.target.value)} className="w-44">
-          <option value="">Responsable de site...</option>
-          {gestionnaires.map((g) => <option key={g.id} value={g.id}>{g.nom}</option>)}
-        </Select>
-        <Button variant="ghost" onClick={ajouter}><Plus size={14} /> Ajouter</Button>
-      </div>
-    </div>
-  );
-}
-
-function DepartementsSection({ data, update }) {
-  const [nouveauNom, setNouveauNom] = useState("");
-  const [nouveauCode, setNouveauCode] = useState("");
-  const [nouveauSiteId, setNouveauSiteId] = useState("");
-  const [editingId, setEditingId] = useState(null);
-  const [editingNom, setEditingNom] = useState("");
-  const [editingCode, setEditingCode] = useState("");
-  const [editingSiteId, setEditingSiteId] = useState("");
-
-  const sitesActifs = (data.sites || []).filter((s) => s.actif !== false);
-
-  const ajouter = () => {
-    if (!nouveauNom.trim()) return;
-    update((d) => { d.departements.push({ id: uid(), nom: nouveauNom.trim(), code: nouveauCode.trim(), siteId: nouveauSiteId || (d.sites[0] ? d.sites[0].id : null), actif: true }); });
-    setNouveauNom(""); setNouveauCode(""); setNouveauSiteId("");
-  };
-
-  const sauverEdition = (id) => {
-    if (!editingNom.trim()) return;
-    update((d) => {
-      const x = d.departements.find((y) => y.id === id);
-      x.nom = editingNom.trim(); x.code = editingCode.trim(); x.siteId = editingSiteId || null;
-    });
-    setEditingId(null);
-  };
-
-  return (
-    <div className="border-t border-[#DFD8C2] pt-4">
-      <h4 className="text-sm font-medium mb-2 flex items-center gap-1.5"><Boxes size={14} /> Départements</h4>
-      <p className="text-xs text-[#8B8974] mb-3">Ces départements permettent de classer les productions et les postes du personnel (production animale, production végétale, transformation, transport, boutique intrant, autres...). Chaque département est rattaché à un site et peut avoir un code analytique.</p>
-
-      <div className="space-y-2 mb-3">
-        {data.departements.map((item) => {
-          const site = sitesActifs.find((s) => s.id === item.siteId);
-          return (
-            <div key={item.id} className="flex items-center justify-between text-sm border border-[#DFD8C2] rounded-md px-3 py-2">
-              {editingId === item.id ? (
-                <div className="flex items-center gap-2 flex-1 flex-wrap">
-                  <Input value={editingNom} onChange={(e) => setEditingNom(e.target.value)} className="flex-1 min-w-[120px]" placeholder="Nom" />
-                  <Input value={editingCode} onChange={(e) => setEditingCode(e.target.value)} className="w-24" placeholder="Code" />
-                  <Select value={editingSiteId} onChange={(e) => setEditingSiteId(e.target.value)} className="w-40">
-                    <option value="">Aucun site</option>
-                    {sitesActifs.map((s) => <option key={s.id} value={s.id}>{s.nom}</option>)}
-                  </Select>
-                  <button onClick={() => sauverEdition(item.id)} className="text-[#8B5E3C] text-xs">OK</button>
-                </div>
-              ) : (
-                <>
-                  <div className="flex items-center gap-2">
-                    <span className={item.actif === false ? "text-[#8B8974] line-through" : ""}>{item.nom}</span>
-                    {item.code && <Badge tone="accent">{item.code}</Badge>}
-                    {sitesActifs.length > 1 && <span className="text-xs text-[#8B8974]">· {site ? site.nom : "Aucun site"}</span>}
-                    {item.actif === false && <Badge tone="default">Inactif</Badge>}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <button onClick={() => { setEditingId(item.id); setEditingNom(item.nom); setEditingCode(item.code || ""); setEditingSiteId(item.siteId || ""); }} className="text-xs text-[#8B5E3C]">Modifier</button>
-                    <button
-                      onClick={() => update((d) => { const x = d.departements.find((y) => y.id === item.id); x.actif = x.actif === false ? true : false; })}
-                      className="text-xs text-[#8B5E3C]"
-                    >{item.actif === false ? "Activer" : "Désactiver"}</button>
-                    <button onClick={() => { if (confirm("Supprimer ce département ?")) update((d) => { d.departements = d.departements.filter((x) => x.id !== item.id); }); }} className="text-[#C7C2A8] hover:text-[#A6402A]">
-                      <Trash2 size={14} />
-                    </button>
-                  </div>
-                </>
-              )}
-            </div>
-          );
-        })}
-      </div>
-
-      <div className="flex gap-2 flex-wrap">
-        <Input value={nouveauNom} onChange={(e) => setNouveauNom(e.target.value)} placeholder="Nom" className="flex-1 min-w-[120px]" />
-        <Input value={nouveauCode} onChange={(e) => setNouveauCode(e.target.value)} placeholder="Code" className="w-24" />
-        <Select value={nouveauSiteId} onChange={(e) => setNouveauSiteId(e.target.value)} className="w-40">
-          <option value="">Site...</option>
-          {sitesActifs.map((s) => <option key={s.id} value={s.id}>{s.nom}</option>)}
-        </Select>
-        <Button variant="ghost" onClick={ajouter}><Plus size={14} /> Ajouter</Button>
-      </div>
-    </div>
   );
 }
 
@@ -1157,134 +693,6 @@ function ListeAvecCodeSection({ data, update, champ, titre, description, icon: I
       <div className="flex gap-2">
         <Input value={nouveauNom} onChange={(e) => setNouveauNom(e.target.value)} placeholder="Nom" className="flex-1" />
         <Input value={nouveauCode} onChange={(e) => setNouveauCode(e.target.value)} placeholder="Code" className="w-24" />
-        <Button variant="ghost" onClick={ajouter}><Plus size={14} /> Ajouter</Button>
-      </div>
-    </div>
-  );
-}
-
-function SectionsProductionSection({ data, update }) {
-  const [nouveauNom, setNouveauNom] = useState("");
-  const [nouveauCode, setNouveauCode] = useState("");
-  const [nouveauDepartementId, setNouveauDepartementId] = useState("");
-  const [editingId, setEditingId] = useState(null);
-  const [editingNom, setEditingNom] = useState("");
-  const [editingCode, setEditingCode] = useState("");
-  const [editingDepartementId, setEditingDepartementId] = useState("");
-
-  const departementsActifs = data.departements.filter((d) => d.actif !== false);
-
-  const ajouter = () => {
-    if (!nouveauNom.trim()) return;
-    update((d) => { d.sectionsProduction.push({ id: uid(), nom: nouveauNom.trim(), code: nouveauCode.trim(), departementId: nouveauDepartementId || null, actif: true }); });
-    setNouveauNom("");
-    setNouveauCode("");
-  };
-
-  const sauverEdition = (id) => {
-    if (!editingNom.trim()) return;
-    update((d) => {
-      const x = d.sectionsProduction.find((y) => y.id === id);
-      x.nom = editingNom.trim(); x.code = editingCode.trim(); x.departementId = editingDepartementId || null;
-    });
-    setEditingId(null);
-  };
-
-  const sansDepartement = data.sectionsProduction.filter((s) => !s.departementId);
-
-  return (
-    <div className="border-t border-[#DFD8C2] pt-4">
-      <h4 className="text-sm font-medium mb-2 flex items-center gap-1.5"><Sprout size={14} /> Sections de production (par département)</h4>
-      <p className="text-xs text-[#8B8974] mb-3">Chaque section est une unité de production rattachée à un département (ex. Pondeuse, Bovin, Pisciculture → Production animale). Ces sections sont proposées pour les techniciens de production dans Personnel, et pour vos dépenses.</p>
-
-      {departementsActifs.map((dep) => {
-        const sections = data.sectionsProduction.filter((s) => s.departementId === dep.id);
-        if (sections.length === 0) return null;
-        return (
-          <div key={dep.id} className="mb-3">
-            <p className="text-xs font-medium text-[#5A5744] mb-1 flex items-center gap-1.5">{dep.nom} {dep.code && <Badge tone="accent">{dep.code}</Badge>}</p>
-            <div className="space-y-2">
-              {sections.map((s) => (
-                <div key={s.id} className="flex items-center justify-between text-sm border border-[#DFD8C2] rounded-md px-3 py-2">
-                  {editingId === s.id ? (
-                    <div className="flex items-center gap-2 flex-1 flex-wrap">
-                      <Input value={editingNom} onChange={(e) => setEditingNom(e.target.value)} className="flex-1 min-w-[120px]" placeholder="Nom" />
-                      <Input value={editingCode} onChange={(e) => setEditingCode(e.target.value)} className="w-20" placeholder="Code" />
-                      <Select value={editingDepartementId} onChange={(e) => setEditingDepartementId(e.target.value)} className="w-40">
-                        <option value="">Aucun département</option>
-                        {departementsActifs.map((d) => <option key={d.id} value={d.id}>{d.nom}</option>)}
-                      </Select>
-                      <button onClick={() => sauverEdition(s.id)} className="text-[#8B5E3C] text-xs">OK</button>
-                    </div>
-                  ) : (
-                    <>
-                      <div className="flex items-center gap-2">
-                        <span className={s.actif === false ? "text-[#8B8974] line-through" : ""}>{s.nom}</span>
-                        {s.code && <Badge tone="accent">{s.code}</Badge>}
-                        {s.actif === false && <Badge tone="default">Inactif</Badge>}
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <button onClick={() => { setEditingId(s.id); setEditingNom(s.nom); setEditingCode(s.code || ""); setEditingDepartementId(s.departementId || ""); }} className="text-xs text-[#8B5E3C]">Modifier</button>
-                        <button
-                          onClick={() => update((d) => { const x = d.sectionsProduction.find((y) => y.id === s.id); x.actif = x.actif === false ? true : false; })}
-                          className="text-xs text-[#8B5E3C]"
-                        >{s.actif === false ? "Activer" : "Désactiver"}</button>
-                        <button onClick={() => { if (confirm("Supprimer cette section ?")) update((d) => { d.sectionsProduction = d.sectionsProduction.filter((x) => x.id !== s.id); }); }} className="text-[#C7C2A8] hover:text-[#A6402A]">
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
-                    </>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-        );
-      })}
-
-      {sansDepartement.length > 0 && (
-        <div className="mb-3">
-          <p className="text-xs font-medium text-[#5A5744] mb-1">Sans département</p>
-          <div className="space-y-2">
-            {sansDepartement.map((s) => (
-              <div key={s.id} className="flex items-center justify-between text-sm border border-[#DFD8C2] rounded-md px-3 py-2">
-                {editingId === s.id ? (
-                  <div className="flex items-center gap-2 flex-1 flex-wrap">
-                    <Input value={editingNom} onChange={(e) => setEditingNom(e.target.value)} className="flex-1 min-w-[120px]" placeholder="Nom" />
-                    <Input value={editingCode} onChange={(e) => setEditingCode(e.target.value)} className="w-20" placeholder="Code" />
-                    <Select value={editingDepartementId} onChange={(e) => setEditingDepartementId(e.target.value)} className="w-40">
-                      <option value="">Aucun département</option>
-                      {departementsActifs.map((d) => <option key={d.id} value={d.id}>{d.nom}</option>)}
-                    </Select>
-                    <button onClick={() => sauverEdition(s.id)} className="text-[#8B5E3C] text-xs">OK</button>
-                  </div>
-                ) : (
-                  <>
-                    <div className="flex items-center gap-2">
-                      <span>{s.nom}</span>
-                      {s.code && <Badge tone="accent">{s.code}</Badge>}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <button onClick={() => { setEditingId(s.id); setEditingNom(s.nom); setEditingCode(s.code || ""); setEditingDepartementId(s.departementId || ""); }} className="text-xs text-[#8B5E3C]">Modifier</button>
-                      <button onClick={() => { if (confirm("Supprimer cette section ?")) update((d) => { d.sectionsProduction = d.sectionsProduction.filter((x) => x.id !== s.id); }); }} className="text-[#C7C2A8] hover:text-[#A6402A]">
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
-                  </>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      <div className="flex gap-2 flex-wrap">
-        <Input value={nouveauNom} onChange={(e) => setNouveauNom(e.target.value)} placeholder="Nom de la section" className="flex-1 min-w-[120px]" />
-        <Input value={nouveauCode} onChange={(e) => setNouveauCode(e.target.value)} placeholder="Code" className="w-20" />
-        <Select value={nouveauDepartementId} onChange={(e) => setNouveauDepartementId(e.target.value)} className="w-40">
-          <option value="">Département...</option>
-          {departementsActifs.map((d) => <option key={d.id} value={d.id}>{d.nom}</option>)}
-        </Select>
         <Button variant="ghost" onClick={ajouter}><Plus size={14} /> Ajouter</Button>
       </div>
     </div>
@@ -1444,19 +852,6 @@ function ParametresModal({ data, update, onClose }) {
       setCloudStatus(`Envoyé vers le cloud à ${new Date().toLocaleTimeString("fr-FR")}`);
     } catch (err) {
       setCloudError(err.message || "Échec de l'envoi.");
-    } finally {
-      setCloudBusy(false);
-    }
-  };
-
-  const synchroniserMaintenant = async () => {
-    setCloudError(""); setCloudBusy(true);
-    try {
-      const fusion = await sync.synchroniser(cloudConfig, data);
-      update((d) => { Object.keys(emptyState).forEach((k) => { d[k] = fusion[k] ?? emptyState[k]; }); });
-      setCloudStatus(`Synchronisé (fusionné) à ${new Date().toLocaleTimeString("fr-FR")}`);
-    } catch (err) {
-      setCloudError(err.message || "Échec de la synchronisation.");
     } finally {
       setCloudBusy(false);
     }
@@ -1672,20 +1067,11 @@ function ParametresModal({ data, update, onClose }) {
           {cloudConfig ? (
             <div className="space-y-3">
               <p className="text-xs text-[#3C5A34]">{cloudStatus}</p>
-              <Button variant="accent" onClick={synchroniserMaintenant} disabled={cloudBusy} className="w-full">
-                <Share2 size={14} /> Synchroniser maintenant (fusionner)
-              </Button>
-              <p className="text-xs text-[#8B8974]">
-                À utiliser régulièrement sur chaque appareil (matin/soir, ou après chaque étape du circuit production → vente → caisse). Rien n'est écrasé : les données des deux côtés sont combinées.
-              </p>
-              <details className="text-xs text-[#8B8974]">
-                <summary className="cursor-pointer text-[#8B5E3C]">Options avancées (écrasement complet, à utiliser avec précaution)</summary>
-                <div className="flex gap-2 flex-wrap mt-2">
-                  <Button variant="ghost" onClick={envoyerCloud} disabled={cloudBusy}>Envoyer vers le cloud (écrase le cloud)</Button>
-                  <Button variant="ghost" onClick={recupererCloud} disabled={cloudBusy}>Récupérer depuis le cloud (écrase cet appareil)</Button>
-                </div>
-              </details>
-              <Button variant="danger" onClick={deconnecterCloud} disabled={cloudBusy}>Se déconnecter</Button>
+              <div className="flex gap-2 flex-wrap">
+                <Button variant="ghost" onClick={envoyerCloud} disabled={cloudBusy}>Envoyer vers le cloud</Button>
+                <Button variant="ghost" onClick={recupererCloud} disabled={cloudBusy}>Récupérer depuis le cloud</Button>
+                <Button variant="danger" onClick={deconnecterCloud} disabled={cloudBusy}>Se déconnecter</Button>
+              </div>
             </div>
           ) : (
             <div className="space-y-3">
@@ -1726,11 +1112,17 @@ function ParametresModal({ data, update, onClose }) {
 
         <GestionnairesSection data={data} update={update} />
 
-        <SitesSection data={data} update={update} />
+        <ListeAvecCodeSection
+          data={data} update={update} champ="departements" icon={Boxes}
+          titre="Départements"
+          description="Ces départements permettent de classer les productions et les postes du personnel (production animale, végétale, aquaculture, apiculture, transport, boutique intrant, autres...). Chaque département peut avoir un code analytique."
+        />
 
-        <DepartementsSection data={data} update={update} />
-
-        <SectionsProductionSection data={data} update={update} />
+        <ListeAvecCodeSection
+          data={data} update={update} champ="sectionsProduction" icon={Sprout}
+          titre="Sections de production (codes analytiques)"
+          description="Ces sections (maraîchage, pisciculture, apiculture...) sont proposées pour les techniciens de production dans Personnel, et peuvent servir de code analytique pour vos dépenses."
+        />
 
         <CategoriesDepensesSection data={data} update={update} />
 
@@ -2334,7 +1726,6 @@ function ProductionForm({ onSubmit }) {
 // ============================================================
 function Stocks({ data, update }) {
   const [showAdd, setShowAdd] = useState(false);
-  const [editing, setEditing] = useState(null);
   const [mvtFor, setMvtFor] = useState(null);
 
   return (
@@ -2357,12 +1748,9 @@ function Stocks({ data, update }) {
                     <h3 className="font-medium">{s.nom}</h3>
                     <p className="text-xs text-[#8B8974]">{s.categorie}</p>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <button onClick={() => setEditing(s.id)} className="text-[#8B5E3C] text-xs">Modifier</button>
-                    <button onClick={() => update((d) => { d.stocks = d.stocks.filter((x) => x.id !== s.id); })} className="text-[#C7C2A8] hover:text-[#A6402A]">
-                      <Trash2 size={16} />
-                    </button>
-                  </div>
+                  <button onClick={() => update((d) => { d.stocks = d.stocks.filter((x) => x.id !== s.id); })} className="text-[#C7C2A8] hover:text-[#A6402A]">
+                    <Trash2 size={16} />
+                  </button>
                 </div>
                 <div className="flex items-center justify-between mt-3">
                   <span className="font-serif text-lg">{s.quantite} <span className="text-sm font-sans text-[#8B8974]">{s.unite}</span></span>
@@ -2381,18 +1769,6 @@ function Stocks({ data, update }) {
             onSubmit={(vals) => {
               update((d) => d.stocks.push({ id: uid(), ...vals }));
               setShowAdd(false);
-            }}
-          />
-        </Modal>
-      )}
-
-      {editing && (
-        <Modal title="Modifier l'article" onClose={() => setEditing(null)}>
-          <StockForm
-            initial={data.stocks.find((s) => s.id === editing)}
-            onSubmit={(vals) => {
-              update((d) => { const s = d.stocks.find((x) => x.id === editing); Object.assign(s, vals); });
-              setEditing(null);
             }}
           />
         </Modal>
@@ -2417,12 +1793,12 @@ function Stocks({ data, update }) {
   );
 }
 
-function StockForm({ onSubmit, initial }) {
-  const [nom, setNom] = useState(initial?.nom || "");
-  const [categorie, setCategorie] = useState(initial?.categorie || "semence");
-  const [quantite, setQuantite] = useState(initial?.quantite ?? "");
-  const [unite, setUnite] = useState(initial?.unite || "kg");
-  const [seuil, setSeuil] = useState(initial?.seuil ?? "");
+function StockForm({ onSubmit }) {
+  const [nom, setNom] = useState("");
+  const [categorie, setCategorie] = useState("semence");
+  const [quantite, setQuantite] = useState("");
+  const [unite, setUnite] = useState("kg");
+  const [seuil, setSeuil] = useState("");
   return (
     <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); if (!nom) return; onSubmit({ nom, categorie, quantite: quantite || 0, unite, seuil: seuil || 0 }); }}>
       <Field label="Nom"><Input value={nom} onChange={(e) => setNom(e.target.value)} placeholder="Ex. Semence de maïs" required /></Field>
@@ -2435,10 +1811,10 @@ function StockForm({ onSubmit, initial }) {
           <option value="autre">Autre</option>
         </Select>
       </Field>
-      <Field label={initial ? "Quantité" : "Quantité initiale"}><Input type="number" step="0.01" value={quantite} onChange={(e) => setQuantite(e.target.value)} /></Field>
+      <Field label="Quantité initiale"><Input type="number" step="0.01" value={quantite} onChange={(e) => setQuantite(e.target.value)} /></Field>
       <Field label="Unité"><Input value={unite} onChange={(e) => setUnite(e.target.value)} /></Field>
       <Field label="Seuil d'alerte"><Input type="number" step="0.01" value={seuil} onChange={(e) => setSeuil(e.target.value)} /></Field>
-      <Button type="submit" variant="accent" className="w-full">{initial ? "Mettre à jour" : "Ajouter l'article"}</Button>
+      <Button type="submit" variant="accent" className="w-full">Ajouter l'article</Button>
     </form>
   );
 }
@@ -2467,7 +1843,6 @@ function MouvementForm({ onSubmit }) {
 // ============================================================
 function Finances({ data, update }) {
   const [showAdd, setShowAdd] = useState(false);
-  const [editing, setEditing] = useState(null);
   const revenus = data.transactions.filter((t) => t.type === "revenu").reduce((s, t) => s + Number(t.montant || 0), 0);
   const depenses = data.transactions.filter((t) => t.type === "depense").reduce((s, t) => s + Number(t.montant || 0), 0);
 
@@ -2522,26 +1897,17 @@ function Finances({ data, update }) {
             const departement = data.departements.find((d) => d.id === t.departementId);
             const section = data.sectionsProduction.find((s) => s.id === t.sectionProductionId);
             return (
-              <div key={t.id} className="p-3 flex items-center justify-between text-sm gap-2">
-                <div className="min-w-0">
-                  <p className="font-medium truncate">{t.description || t.categorie}</p>
+              <div key={t.id} className="p-3 flex items-center justify-between text-sm">
+                <div>
+                  <p className="font-medium">{t.description || t.categorie}</p>
                   <p className="text-xs text-[#8B8974]">
                     {t.categorie}{t.codeCategorie ? ` (${t.codeCategorie})` : ""} · {fmtDate(t.date)} · {compte ? `${COMPTE_LABELS[compte.type]} (${compte.nom})` : "Espèces"}{produit ? ` · ${produit.nom}` : ""}
                     {departement ? ` · ${departement.nom}` : ""}{section ? ` · ${section.nom}` : ""}
                   </p>
                 </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  <span className={t.type === "revenu" ? "text-[#3C5A34] font-medium" : "text-[#A6402A] font-medium"}>
-                    {t.type === "revenu" ? "+" : "-"}{formatNombre(t.montant)}
-                  </span>
-                  <button onClick={() => setEditing(t.id)} className="text-[#8B5E3C] text-xs">Modifier</button>
-                  <button
-                    onClick={() => { if (confirm("Supprimer cette transaction ?")) update((d) => { d.transactions = d.transactions.filter((x) => x.id !== t.id); }); }}
-                    className="text-[#C7C2A8] hover:text-[#A6402A]"
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                </div>
+                <span className={t.type === "revenu" ? "text-[#3C5A34] font-medium" : "text-[#A6402A] font-medium"}>
+                  {t.type === "revenu" ? "+" : "-"}{Number(t.montant).toLocaleString("fr-FR")}
+                </span>
               </div>
             );
           })}
@@ -2565,42 +1931,23 @@ function Finances({ data, update }) {
           />
         </Modal>
       )}
-
-      {editing && (
-        <Modal title="Modifier la transaction" onClose={() => setEditing(null)}>
-          <TransactionForm
-            initial={data.transactions.find((t) => t.id === editing)}
-            comptes={data.comptes}
-            produits={data.produits}
-            employes={data.employes}
-            categoriesDepenses={data.categoriesDepenses}
-            departements={data.departements}
-            sectionsProduction={data.sectionsProduction}
-            devise={data.ferme.devise}
-            onSubmit={(vals) => {
-              update((d) => { const t = d.transactions.find((x) => x.id === editing); Object.assign(t, vals); });
-              setEditing(null);
-            }}
-          />
-        </Modal>
-      )}
     </div>
   );
 }
 
-function TransactionForm({ onSubmit, initial, comptes = [], produits = [], employes = [], categoriesDepenses = [], departements = [], sectionsProduction = [], devise = "FCFA" }) {
-  const [type, setType] = useState(initial?.type || "depense");
-  const [categorie, setCategorie] = useState(initial?.categorie || "");
-  const [montant, setMontant] = useState(initial?.montant ?? "");
-  const [date, setDate] = useState(initial?.date || today());
-  const [description, setDescription] = useState(initial?.description || "");
-  const [compteId, setCompteId] = useState(initial?.compteId || "");
-  const [produitId, setProduitId] = useState(initial?.produitId || "");
-  const [quantite, setQuantite] = useState(initial?.quantite ?? "");
-  const [typeCharge, setTypeCharge] = useState(initial?.typeCharge || "variable");
-  const [employeId, setEmployeId] = useState(initial?.employeId || "");
-  const [departementId, setDepartementId] = useState(initial?.departementId || "");
-  const [sectionProductionId, setSectionProductionId] = useState(initial?.sectionProductionId || "");
+function TransactionForm({ onSubmit, comptes = [], produits = [], employes = [], categoriesDepenses = [], departements = [], sectionsProduction = [], devise = "FCFA" }) {
+  const [type, setType] = useState("depense");
+  const [categorie, setCategorie] = useState("");
+  const [montant, setMontant] = useState("");
+  const [date, setDate] = useState(today());
+  const [description, setDescription] = useState("");
+  const [compteId, setCompteId] = useState("");
+  const [produitId, setProduitId] = useState("");
+  const [quantite, setQuantite] = useState("");
+  const [typeCharge, setTypeCharge] = useState("variable");
+  const [employeId, setEmployeId] = useState("");
+  const [departementId, setDepartementId] = useState("");
+  const [sectionProductionId, setSectionProductionId] = useState("");
 
   const categoriesDisponibles = categoriesDepenses.filter((c) => c.actif !== false && c.type === typeCharge);
 
@@ -2672,7 +2019,7 @@ function TransactionForm({ onSubmit, initial, comptes = [], produits = [], emplo
         <Field label="Section de production (code analytique)">
           <Select value={sectionProductionId} onChange={(e) => setSectionProductionId(e.target.value)}>
             <option value="">Non précisé</option>
-            {sectionsProduction.filter((s) => s.actif !== false && (!departementId || s.departementId === departementId)).map((s) => <option key={s.id} value={s.id}>{s.nom}{s.code ? ` (${s.code})` : ""}</option>)}
+            {sectionsProduction.filter((s) => s.actif !== false).map((s) => <option key={s.id} value={s.id}>{s.nom}{s.code ? ` (${s.code})` : ""}</option>)}
           </Select>
         </Field>
       )}
@@ -2694,7 +2041,7 @@ function TransactionForm({ onSubmit, initial, comptes = [], produits = [], emplo
         </Field>
       )}
       <Field label="Description"><TextArea value={description} onChange={(e) => setDescription(e.target.value)} /></Field>
-      <Button type="submit" variant="accent" className="w-full">{initial ? "Mettre à jour" : "Enregistrer"}</Button>
+      <Button type="submit" variant="accent" className="w-full">Enregistrer</Button>
     </form>
   );
 }
@@ -2916,11 +2263,8 @@ function calculBulletinPaie({ brut, primes = 0, situationFamiliale = "celibatair
 function Investissements({ data, update }) {
   const [subTab, setSubTab] = useState("investissements");
   const [showAddInv, setShowAddInv] = useState(false);
-  const [editingInv, setEditingInv] = useState(null);
   const [showAddInvestisseur, setShowAddInvestisseur] = useState(false);
-  const [editingInvestisseur, setEditingInvestisseur] = useState(null);
   const [showAddPret, setShowAddPret] = useState(false);
-  const [editingPret, setEditingPret] = useState(null);
   const [selectedPret, setSelectedPret] = useState(null);
   const devise = data.ferme.devise;
 
@@ -2976,12 +2320,9 @@ function Investissements({ data, update }) {
                         <h3 className="font-medium">{inv.nom}</h3>
                         <p className="text-xs text-[#8B8974]">Acquis le {fmtDate(inv.date)} · {money(inv.montant, devise)}</p>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <button onClick={() => setEditingInv(inv.id)} className="text-[#8B5E3C] text-xs">Modifier</button>
-                        <button onClick={() => { if (confirm("Supprimer cet investissement ?")) update((d) => { d.investissements = d.investissements.filter((x) => x.id !== inv.id); }); }} className="text-[#C7C2A8] hover:text-[#A6402A]">
-                          <Trash2 size={16} />
-                        </button>
-                      </div>
+                      <button onClick={() => { if (confirm("Supprimer cet investissement ?")) update((d) => { d.investissements = d.investissements.filter((x) => x.id !== inv.id); }); }} className="text-[#C7C2A8] hover:text-[#A6402A]">
+                        <Trash2 size={16} />
+                      </button>
                     </div>
                     <div className="mt-3 text-sm space-y-1">
                       <div className="flex justify-between"><span className="text-[#8B8974]">Amortissement annuel</span><span>{money(am.annuel, devise)}</span></div>
@@ -3000,18 +2341,6 @@ function Investissements({ data, update }) {
           {showAddInv && (
             <Modal title="Nouvel investissement" onClose={() => setShowAddInv(false)}>
               <InvestissementForm devise={devise} onSubmit={(vals) => { update((d) => d.investissements.push({ id: uid(), ...vals })); setShowAddInv(false); }} />
-            </Modal>
-          )}
-          {editingInv && (
-            <Modal title="Modifier l'investissement" onClose={() => setEditingInv(null)}>
-              <InvestissementForm
-                devise={devise}
-                initial={data.investissements.find((i) => i.id === editingInv)}
-                onSubmit={(vals) => {
-                  update((d) => { const inv = d.investissements.find((x) => x.id === editingInv); Object.assign(inv, vals); });
-                  setEditingInv(null);
-                }}
-              />
             </Modal>
           )}
         </div>
@@ -3074,7 +2403,6 @@ function Investissements({ data, update }) {
                     </div>
                     <div className="flex items-center gap-3">
                       <span className="font-medium">{money(inv.montantInvesti, devise)}</span>
-                      <button onClick={() => setEditingInvestisseur(inv.id)} className="text-[#8B5E3C] text-xs">Modifier</button>
                       <button onClick={() => { if (confirm("Supprimer cet investisseur ?")) update((d) => { d.investisseurs = d.investisseurs.filter((x) => x.id !== inv.id); }); }} className="text-[#C7C2A8] hover:text-[#A6402A]">
                         <Trash2 size={14} />
                       </button>
@@ -3087,18 +2415,6 @@ function Investissements({ data, update }) {
           {showAddInvestisseur && (
             <Modal title="Nouvel investisseur" onClose={() => setShowAddInvestisseur(false)}>
               <InvestisseurForm devise={devise} onSubmit={(vals) => { update((d) => d.investisseurs.push({ id: uid(), ...vals })); setShowAddInvestisseur(false); }} />
-            </Modal>
-          )}
-          {editingInvestisseur && (
-            <Modal title="Modifier l'investisseur" onClose={() => setEditingInvestisseur(null)}>
-              <InvestisseurForm
-                devise={devise}
-                initial={data.investisseurs.find((i) => i.id === editingInvestisseur)}
-                onSubmit={(vals) => {
-                  update((d) => { const inv = d.investisseurs.find((x) => x.id === editingInvestisseur); Object.assign(inv, vals); });
-                  setEditingInvestisseur(null);
-                }}
-              />
             </Modal>
           )}
         </div>
@@ -3124,12 +2440,9 @@ function Investissements({ data, update }) {
                         <h3 className="font-medium mt-1">{pret.preteur}</h3>
                         <p className="text-xs text-[#8B8974]">{money(pret.montant, devise)} · {pret.tauxInteret}%/an · {pret.dureeMois} mois</p>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <button onClick={(e) => { e.stopPropagation(); setEditingPret(pret.id); }} className="text-[#8B5E3C] text-xs">Modifier</button>
-                        <button onClick={(e) => { e.stopPropagation(); if (confirm("Supprimer ce prêt ?")) update((d) => { d.prets = d.prets.filter((x) => x.id !== pret.id); }); }} className="text-[#C7C2A8] hover:text-[#A6402A]">
-                          <Trash2 size={16} />
-                        </button>
-                      </div>
+                      <button onClick={(e) => { e.stopPropagation(); if (confirm("Supprimer ce prêt ?")) update((d) => { d.prets = d.prets.filter((x) => x.id !== pret.id); }); }} className="text-[#C7C2A8] hover:text-[#A6402A]">
+                        <Trash2 size={16} />
+                      </button>
                     </div>
                     <div className="mt-3 text-sm space-y-1">
                       <div className="flex justify-between"><span className="text-[#8B8974]">Mensualité</span><span>{money(calc.mensualite, devise)}</span></div>
@@ -3144,18 +2457,6 @@ function Investissements({ data, update }) {
           {showAddPret && (
             <Modal title="Nouveau prêt / emprunt" onClose={() => setShowAddPret(false)}>
               <PretForm devise={devise} onSubmit={(vals) => { update((d) => d.prets.push({ id: uid(), ...vals })); setShowAddPret(false); }} />
-            </Modal>
-          )}
-          {editingPret && (
-            <Modal title="Modifier le prêt" onClose={() => setEditingPret(null)}>
-              <PretForm
-                devise={devise}
-                initial={data.prets.find((p) => p.id === editingPret)}
-                onSubmit={(vals) => {
-                  update((d) => { const p = d.prets.find((x) => x.id === editingPret); Object.assign(p, vals); });
-                  setEditingPret(null);
-                }}
-              />
             </Modal>
           )}
           {selectedPret && (() => {
@@ -3201,12 +2502,12 @@ function Investissements({ data, update }) {
   );
 }
 
-function InvestissementForm({ onSubmit, devise = "FCFA", initial }) {
-  const [nom, setNom] = useState(initial?.nom || "");
-  const [montant, setMontant] = useState(initial?.montant ?? "");
-  const [date, setDate] = useState(initial?.date || today());
-  const [dureeAmortissement, setDureeAmortissement] = useState(initial?.dureeAmortissement ?? "5");
-  const [valeurResiduelle, setValeurResiduelle] = useState(initial?.valeurResiduelle ?? "0");
+function InvestissementForm({ onSubmit, devise = "FCFA" }) {
+  const [nom, setNom] = useState("");
+  const [montant, setMontant] = useState("");
+  const [date, setDate] = useState(today());
+  const [dureeAmortissement, setDureeAmortissement] = useState("5");
+  const [valeurResiduelle, setValeurResiduelle] = useState("0");
   return (
     <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); if (!nom || !montant) return; onSubmit({ nom, montant, date, dureeAmortissement, valeurResiduelle }); }}>
       <Field label="Nom de l'investissement"><Input value={nom} onChange={(e) => setNom(e.target.value)} placeholder="Ex. Tracteur, forage, hangar..." /></Field>
@@ -3214,35 +2515,35 @@ function InvestissementForm({ onSubmit, devise = "FCFA", initial }) {
       <Field label="Date d'acquisition"><Input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></Field>
       <Field label="Durée d'amortissement (années)"><Input type="number" step="1" min="1" value={dureeAmortissement} onChange={(e) => setDureeAmortissement(e.target.value)} /></Field>
       <Field label={`Valeur résiduelle (${devise})`}><Input type="number" step="0.01" value={valeurResiduelle} onChange={(e) => setValeurResiduelle(e.target.value)} /></Field>
-      <Button type="submit" variant="accent" className="w-full">{initial ? "Mettre à jour" : "Enregistrer"}</Button>
+      <Button type="submit" variant="accent" className="w-full">Enregistrer</Button>
     </form>
   );
 }
 
-function InvestisseurForm({ onSubmit, devise = "FCFA", initial }) {
-  const [nom, setNom] = useState(initial?.nom || "");
-  const [montantInvesti, setMontantInvesti] = useState(initial?.montantInvesti ?? "");
-  const [date, setDate] = useState(initial?.date || today());
-  const [telephone, setTelephone] = useState(initial?.telephone || "");
+function InvestisseurForm({ onSubmit, devise = "FCFA" }) {
+  const [nom, setNom] = useState("");
+  const [montantInvesti, setMontantInvesti] = useState("");
+  const [date, setDate] = useState(today());
+  const [telephone, setTelephone] = useState("");
   return (
     <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); if (!nom || !montantInvesti) return; onSubmit({ nom, montantInvesti, date, telephone }); }}>
       <Field label="Nom de l'investisseur"><Input value={nom} onChange={(e) => setNom(e.target.value)} /></Field>
       <Field label={`Capital investi (${devise})`}><Input type="number" step="0.01" value={montantInvesti} onChange={(e) => setMontantInvesti(e.target.value)} required /></Field>
       <Field label="Date de l'investissement"><Input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></Field>
       <Field label="Téléphone (optionnel)"><Input value={telephone} onChange={(e) => setTelephone(e.target.value)} /></Field>
-      <Button type="submit" variant="accent" className="w-full">{initial ? "Mettre à jour" : "Enregistrer"}</Button>
+      <Button type="submit" variant="accent" className="w-full">Enregistrer</Button>
     </form>
   );
 }
 
-function PretForm({ onSubmit, devise = "FCFA", initial }) {
-  const [type, setType] = useState(initial?.type || "bancaire");
-  const [preteur, setPreteur] = useState(initial?.preteur || "");
-  const [montant, setMontant] = useState(initial?.montant ?? "");
-  const [tauxInteret, setTauxInteret] = useState(initial?.tauxInteret ?? "");
-  const [dureeMois, setDureeMois] = useState(initial?.dureeMois ?? "12");
-  const [dateDebut, setDateDebut] = useState(initial?.dateDebut || today());
-  const [notes, setNotes] = useState(initial?.notes || "");
+function PretForm({ onSubmit, devise = "FCFA" }) {
+  const [type, setType] = useState("bancaire");
+  const [preteur, setPreteur] = useState("");
+  const [montant, setMontant] = useState("");
+  const [tauxInteret, setTauxInteret] = useState("");
+  const [dureeMois, setDureeMois] = useState("12");
+  const [dateDebut, setDateDebut] = useState(today());
+  const [notes, setNotes] = useState("");
   return (
     <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); if (!preteur || !montant || !dureeMois) return; onSubmit({ type, preteur, montant, tauxInteret: tauxInteret || 0, dureeMois, dateDebut, notes }); }}>
       <Field label="Type de prêt">
@@ -3257,7 +2558,7 @@ function PretForm({ onSubmit, devise = "FCFA", initial }) {
       <Field label="Durée (mois)"><Input type="number" step="1" min="1" value={dureeMois} onChange={(e) => setDureeMois(e.target.value)} required /></Field>
       <Field label="Date de début"><Input type="date" value={dateDebut} onChange={(e) => setDateDebut(e.target.value)} /></Field>
       <Field label="Notes (optionnel)"><TextArea value={notes} onChange={(e) => setNotes(e.target.value)} /></Field>
-      <Button type="submit" variant="accent" className="w-full">{initial ? "Mettre à jour" : "Enregistrer"}</Button>
+      <Button type="submit" variant="accent" className="w-full">Enregistrer</Button>
     </form>
   );
 }
@@ -3269,21 +2570,8 @@ function Contacts({ data, update }) {
   const [showAdd, setShowAdd] = useState(false);
   const [editing, setEditing] = useState(null);
   const [filter, setFilter] = useState("tous");
-  const [erreurRepertoire, setErreurRepertoire] = useState("");
-  const [busyId, setBusyId] = useState(null);
 
   const filtered = data.tiers.filter((t) => filter === "tous" || t.type === filter || (filter !== "tous" && t.type === "les_deux"));
-
-  const enregistrerContact = async (t) => {
-    setErreurRepertoire(""); setBusyId(t.id);
-    try {
-      await enregistrerDansRepertoire({ nom: t.nom, telephone: t.telephone, email: t.email });
-    } catch (err) {
-      setErreurRepertoire(err.message || "Impossible d'enregistrer ce contact.");
-    } finally {
-      setBusyId(null);
-    }
-  };
 
   return (
     <div className="space-y-4">
@@ -3303,8 +2591,6 @@ function Contacts({ data, update }) {
           </button>
         ))}
       </div>
-
-      {erreurRepertoire && <p className="text-xs text-[#A6402A]">{erreurRepertoire}</p>}
 
       {filtered.length === 0 ? (
         <EmptyState icon={Contact} text="Aucun contact enregistré (fournisseur ou client)." action={<Button variant="ghost" onClick={() => setShowAdd(true)}>Ajouter un contact</Button>} />
@@ -3335,11 +2621,6 @@ function Contacts({ data, update }) {
                 </div>
               )}
               {t.notes && <p className="text-xs text-[#8B8974] mt-2 italic">{t.notes}</p>}
-              {surAppareilNatif() && (t.telephone || t.email) && (
-                <Button variant="ghost" className="mt-3 w-full" onClick={() => enregistrerContact(t)} disabled={busyId === t.id}>
-                  <Contact size={14} /> Enregistrer dans le répertoire du téléphone
-                </Button>
-              )}
             </Card>
           ))}
         </div>
@@ -3375,33 +2656,13 @@ function ContactForm({ onSubmit, initial, produits = [] }) {
   const [adresse, setAdresse] = useState(initial?.adresse || "");
   const [produitsSelect, setProduitsSelect] = useState(initial?.produits || []);
   const [notes, setNotes] = useState(initial?.notes || "");
-  const [erreurImport, setErreurImport] = useState("");
 
   const toggleProduit = (nomProduit) => {
     setProduitsSelect((ls) => ls.includes(nomProduit) ? ls.filter((p) => p !== nomProduit) : [...ls, nomProduit]);
   };
 
-  const importerDuTelephone = async () => {
-    setErreurImport("");
-    try {
-      const contact = await choisirContactTelephone();
-      if (!contact) return;
-      if (contact.nom) setNom(contact.nom);
-      if (contact.telephone) setTelephone(contact.telephone);
-      if (contact.email) setEmail(contact.email);
-    } catch (err) {
-      setErreurImport(err.message || "Impossible d'accéder au répertoire du téléphone.");
-    }
-  };
-
   return (
     <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); if (!nom) return; onSubmit({ nom, type, telephone, email, adresse, produits: produitsSelect, notes }); }}>
-      {surAppareilNatif() && (
-        <Button type="button" variant="ghost" className="w-full" onClick={importerDuTelephone}>
-          <Contact size={14} /> Importer depuis le répertoire du téléphone
-        </Button>
-      )}
-      {erreurImport && <p className="text-xs text-[#A6402A]">{erreurImport}</p>}
       <Field label="Nom">
         <Input value={nom} onChange={(e) => setNom(e.target.value)} placeholder="Ex. Coopérative Sikasso" />
       </Field>
@@ -3440,7 +2701,6 @@ function ContactForm({ onSubmit, initial, produits = [] }) {
 function Comptes({ data, update }) {
   const [showAdd, setShowAdd] = useState(false);
   const [selected, setSelected] = useState(null);
-  const [editing, setEditing] = useState(null);
 
   return (
     <div className="space-y-4">
@@ -3466,12 +2726,9 @@ function Comptes({ data, update }) {
                       <p className="text-xs text-[#8B8974]">{COMPTE_LABELS[c.type]}</p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <button onClick={() => setEditing(c.id)} className="text-[#8B5E3C] text-xs">Modifier</button>
-                    <button onClick={() => { if (confirm("Supprimer ce compte ?")) update((d) => { d.comptes = d.comptes.filter((x) => x.id !== c.id); }); }} className="text-[#C7C2A8] hover:text-[#A6402A]">
-                      <Trash2 size={16} />
-                    </button>
-                  </div>
+                  <button onClick={() => { if (confirm("Supprimer ce compte ?")) update((d) => { d.comptes = d.comptes.filter((x) => x.id !== c.id); }); }} className="text-[#C7C2A8] hover:text-[#A6402A]">
+                    <Trash2 size={16} />
+                  </button>
                 </div>
                 <p className={`font-serif text-2xl mt-3 ${solde >= 0 ? "text-[#3C5A34]" : "text-[#A6402A]"}`}>
                   {money(solde, data.ferme.devise)}
@@ -3494,18 +2751,6 @@ function Comptes({ data, update }) {
         </Modal>
       )}
 
-      {editing && (
-        <Modal title="Modifier le compte" onClose={() => setEditing(null)}>
-          <CompteForm
-            initial={data.comptes.find((c) => c.id === editing)}
-            onSubmit={(vals) => {
-              update((d) => { const c = d.comptes.find((x) => x.id === editing); Object.assign(c, vals); });
-              setEditing(null);
-            }}
-          />
-        </Modal>
-      )}
-
       {selected && (
         <Modal title="Mouvements du compte" onClose={() => setSelected(null)}>
           <div className="space-y-2 max-h-96 overflow-y-auto">
@@ -3519,7 +2764,7 @@ function Comptes({ data, update }) {
                     <p className="text-xs text-[#8B8974]">{fmtDate(t.date)}</p>
                   </div>
                   <span className={t.type === "revenu" ? "text-[#3C5A34]" : "text-[#A6402A]"}>
-                    {t.type === "revenu" ? "+" : "-"}{formatNombre(t.montant)}
+                    {t.type === "revenu" ? "+" : "-"}{Number(t.montant).toLocaleString("fr-FR")}
                   </span>
                 </div>
               ))
@@ -3531,10 +2776,10 @@ function Comptes({ data, update }) {
   );
 }
 
-function CompteForm({ onSubmit, initial }) {
-  const [nom, setNom] = useState(initial?.nom || "");
-  const [type, setType] = useState(initial?.type || "banque");
-  const [soldeInitial, setSoldeInitial] = useState(initial?.soldeInitial ?? "");
+function CompteForm({ onSubmit }) {
+  const [nom, setNom] = useState("");
+  const [type, setType] = useState("banque");
+  const [soldeInitial, setSoldeInitial] = useState("");
   return (
     <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); if (!nom) return; onSubmit({ nom, type, soldeInitial: soldeInitial || 0 }); }}>
       <Field label="Type de compte">
@@ -3546,7 +2791,7 @@ function CompteForm({ onSubmit, initial }) {
       </Field>
       <Field label="Nom du compte"><Input value={nom} onChange={(e) => setNom(e.target.value)} placeholder="Ex. BICIS, Caisse principale, Orange Money" required /></Field>
       <Field label="Solde initial (FCFA)"><Input type="number" step="0.01" value={soldeInitial} onChange={(e) => setSoldeInitial(e.target.value)} /></Field>
-      <Button type="submit" variant="accent" className="w-full">{initial ? "Mettre à jour" : "Créer le compte"}</Button>
+      <Button type="submit" variant="accent" className="w-full">Créer le compte</Button>
     </form>
   );
 }
@@ -3577,7 +2822,6 @@ function Documents({ data, update }) {
   const [showAdd, setShowAdd] = useState(false);
   const [filter, setFilter] = useState("tous");
   const [selected, setSelected] = useState(null);
-  const [editing, setEditing] = useState(false);
   const [showSignature, setShowSignature] = useState(false);
   const [shareError, setShareError] = useState("");
 
@@ -3717,29 +2961,12 @@ function Documents({ data, update }) {
 
             {shareError && <p className="text-xs text-[#A6402A]">{shareError}</p>}
             <div className="flex gap-2 pt-2">
-              <Button variant="ghost" onClick={() => setEditing(true)}>Modifier</Button>
               <Button variant="accent" className="flex-1" onClick={() => partager(doc)}><Send size={14} /> Partager par email</Button>
               <Button variant="danger" onClick={() => { if (confirm("Supprimer ce document ?")) { update((d) => { d.documents = d.documents.filter((x) => x.id !== doc.id); }); setSelected(null); } }}>
                 <Trash2 size={14} />
               </Button>
             </div>
           </div>
-        </Modal>
-      )}
-
-      {editing && doc && (
-        <Modal title="Modifier le document" onClose={() => setEditing(false)}>
-          <DocumentForm
-            initial={doc}
-            stocks={data.stocks}
-            produits={data.produits}
-            tiersListe={data.tiers}
-            devise={data.ferme.devise}
-            onSubmit={(vals) => {
-              update((d) => { const target = d.documents.find((x) => x.id === doc.id); Object.assign(target, vals); });
-              setEditing(false);
-            }}
-          />
         </Modal>
       )}
 
@@ -3845,17 +3072,17 @@ function SignaturePad({ onSave, initialNom = "" }) {
   );
 }
 
-function DocumentForm({ onSubmit, initial, stocks = [], produits = [], tiersListe = [], devise = "FCFA" }) {
-  const [type, setType] = useState(initial?.type || "recu");
-  const [numero, setNumero] = useState(initial?.numero || "");
-  const [date, setDate] = useState(initial?.date || today());
-  const [tiers, setTiers] = useState(initial?.tiers || "");
-  const [montant, setMontant] = useState(initial?.montant ?? "");
-  const [statut, setStatut] = useState(initial?.statut || "en_attente");
-  const [notes, setNotes] = useState(initial?.notes || "");
-  const [stockId, setStockId] = useState(initial?.stockId || "");
-  const [quantiteRecue, setQuantiteRecue] = useState(initial?.quantiteRecue ?? "");
-  const [lignes, setLignes] = useState(initial?.lignes || []);
+function DocumentForm({ onSubmit, stocks = [], produits = [], tiersListe = [], devise = "FCFA" }) {
+  const [type, setType] = useState("recu");
+  const [numero, setNumero] = useState("");
+  const [date, setDate] = useState(today());
+  const [tiers, setTiers] = useState("");
+  const [montant, setMontant] = useState("");
+  const [statut, setStatut] = useState("en_attente");
+  const [notes, setNotes] = useState("");
+  const [stockId, setStockId] = useState("");
+  const [quantiteRecue, setQuantiteRecue] = useState("");
+  const [lignes, setLignes] = useState([]);
 
   const showLignes = type === "facture" || type === "commande";
   const totalLignes = lignes.reduce((s, l) => s + Number(l.quantite || 0) * Number(l.prixUnitaire || 0), 0);
@@ -3956,7 +3183,7 @@ function DocumentForm({ onSubmit, initial, stocks = [], produits = [], tiersList
         </Select>
       </Field>
       <Field label="Notes"><TextArea value={notes} onChange={(e) => setNotes(e.target.value)} /></Field>
-      <Button type="submit" variant="accent" className="w-full">{initial ? "Mettre à jour" : "Enregistrer"}</Button>
+      <Button type="submit" variant="accent" className="w-full">Enregistrer</Button>
     </form>
   );
 }
@@ -4064,117 +3291,6 @@ function GrandLivre({ data }) {
           </div>
         ))}
       </div>
-    </Card>
-  );
-}
-
-function texteRapportJournalier(data, date) {
-  const dansJournee = (d) => d === date;
-  const transactionsJour = data.transactions.filter((t) => dansJournee(t.date));
-  const revenus = transactionsJour.filter((t) => t.type === "revenu").reduce((s, t) => s + Number(t.montant || 0), 0);
-  const depenses = transactionsJour.filter((t) => t.type === "depense").reduce((s, t) => s + Number(t.montant || 0), 0);
-  const productionsJour = (data.productions || []).filter((p) => p.date === date || p.dateVente === date || p.dateVersement === date);
-  const presencesJour = data.employes.flatMap((e) => (e.presences || []).filter((pr) => pr.date === date).map((pr) => ({ nom: e.nom, ...pr })));
-  const connexionsJour = (data.connexions || []).filter((c) => c.date === date);
-
-  const lignes = [
-    `Rapport journalier — ${data.ferme.nom}`,
-    `Date : ${fmtDate(date)}`,
-    "",
-    "=== FINANCES ===",
-    `Revenus du jour : ${money(revenus, data.ferme.devise)}`,
-    `Dépenses du jour : ${money(depenses, data.ferme.devise)}`,
-    `Solde du jour : ${money(revenus - depenses, data.ferme.devise)}`,
-  ];
-  if (transactionsJour.length > 0) {
-    lignes.push("", "Détail :");
-    transactionsJour.forEach((t) => {
-      lignes.push(`- ${t.type === "revenu" ? "+" : "-"}${money(t.montant, data.ferme.devise)} — ${t.description || t.categorie}`);
-    });
-  }
-
-  if (productionsJour.length > 0) {
-    lignes.push("", "=== CIRCUIT PRODUCTION → VENTE → CAISSE ===");
-    productionsJour.forEach((p) => {
-      lignes.push(`- ${p.produitNom} — ${STATUT_PRODUCTION_LABELS[p.statut] || p.statut}${p.numeroBonVersement ? ` (${p.numeroBonVersement})` : ""}`);
-    });
-  }
-
-  if (presencesJour.length > 0) {
-    lignes.push("", "=== PRÉSENCE DU PERSONNEL ===");
-    const libelles = { present: "Présent", absent: "Absent", retard: "Retard" };
-    presencesJour.forEach((pr) => lignes.push(`- ${pr.nom} : ${libelles[pr.statut] || pr.statut}`));
-  }
-
-  if (connexionsJour.length > 0) {
-    lignes.push("", "=== GESTIONNAIRES CONNECTÉS ===");
-    connexionsJour.forEach((c) => {
-      const g = data.gestionnaires.find((x) => x.id === c.gestionnaireId);
-      lignes.push(`- ${g ? g.nom : "Gestionnaire supprimé"} à ${new Date(c.heure).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}`);
-    });
-  }
-
-  if (transactionsJour.length === 0 && productionsJour.length === 0 && presencesJour.length === 0) {
-    lignes.push("", "Aucune activité enregistrée ce jour-là.");
-  }
-
-  return lignes.join("\n");
-}
-
-function RapportJournalier({ data }) {
-  const [date, setDate] = useState(today());
-  const [shareError, setShareError] = useState("");
-  const [busy, setBusy] = useState(false);
-
-  const transactionsJour = data.transactions.filter((t) => t.date === date);
-  const revenus = transactionsJour.filter((t) => t.type === "revenu").reduce((s, t) => s + Number(t.montant || 0), 0);
-  const depenses = transactionsJour.filter((t) => t.type === "depense").reduce((s, t) => s + Number(t.montant || 0), 0);
-  const productionsJour = (data.productions || []).filter((p) => p.date === date || p.dateVente === date || p.dateVersement === date);
-  const presencesJour = data.employes.flatMap((e) => (e.presences || []).filter((pr) => pr.date === date).map((pr) => ({ nom: e.nom, ...pr })));
-
-  const partager = async () => {
-    setShareError(""); setBusy(true);
-    try {
-      await partagerDocument({
-        titre: `Rapport journalier — ${fmtDate(date)}`,
-        sujet: `Rapport journalier — ${data.ferme.nom} — ${fmtDate(date)}`,
-        texte: texteRapportJournalier(data, date),
-      });
-    } catch (err) {
-      setShareError("Le partage a échoué. Réessayez.");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <Card className="p-4">
-      <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
-        <h3 className="font-serif text-sm">Rapport journalier</h3>
-        <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="w-auto" />
-      </div>
-      <p className="text-xs text-[#8B8974] mb-3">Résumé de la journée choisie (finances, circuit production, présence du personnel), à envoyer par email — par exemple à votre responsable ou associé, chaque soir.</p>
-
-      <div className="grid grid-cols-3 gap-2 mb-3 text-center">
-        <div className="bg-[#EAF0E6] rounded-md py-2"><p className="font-serif text-sm text-[#3C5A34]">{money(revenus, data.ferme.devise)}</p><p className="text-xs text-[#8B8974]">Revenus</p></div>
-        <div className="bg-[#F5DFDA] rounded-md py-2"><p className="font-serif text-sm text-[#A6402A]">{money(depenses, data.ferme.devise)}</p><p className="text-xs text-[#8B8974]">Dépenses</p></div>
-        <div className="bg-[#FBF9F2] border border-[#DFD8C2] rounded-md py-2"><p className="font-serif text-sm">{money(revenus - depenses, data.ferme.devise)}</p><p className="text-xs text-[#8B8974]">Solde</p></div>
-      </div>
-
-      {productionsJour.length > 0 && (
-        <div className="text-xs text-[#8B8974] mb-2">{productionsJour.length} mouvement(s) du circuit production ce jour-là.</div>
-      )}
-      {presencesJour.length > 0 && (
-        <div className="text-xs text-[#8B8974] mb-2">
-          Présence : {presencesJour.filter((p) => p.statut === "present").length} présent(s), {presencesJour.filter((p) => p.statut === "absent").length} absent(s), {presencesJour.filter((p) => p.statut === "retard").length} retard(s).
-        </div>
-      )}
-      {transactionsJour.length === 0 && productionsJour.length === 0 && presencesJour.length === 0 && (
-        <p className="text-xs text-[#8B8974] mb-2">Aucune activité enregistrée pour cette date.</p>
-      )}
-
-      {shareError && <p className="text-xs text-[#A6402A] mb-2">{shareError}</p>}
-      <Button variant="accent" className="w-full" onClick={partager} disabled={busy}><Send size={14} /> Envoyer le rapport par email</Button>
     </Card>
   );
 }
@@ -4311,8 +3427,6 @@ function RapportMensuel({ data }) {
 
   return (
     <div className="space-y-6">
-      <RapportJournalier data={data} />
-
       {(progressionMensuelle.length > 1 || caParAnnee.length > 0) && (
         <div className="grid lg:grid-cols-2 gap-4">
           {progressionMensuelle.length > 1 && (
@@ -4635,7 +3749,7 @@ function Produits({ data, update }) {
                   <dt className="text-[#8B8974]">Chiffre d'affaires</dt>
                   <dd className="text-right font-medium">{money(p.chiffreAffaires, data.ferme.devise)}</dd>
                   <dt className="text-[#8B8974]">Quantité vendue</dt>
-                  <dd className="text-right">{formatNombre(p.quantiteVendue)} {p.unite}</dd>
+                  <dd className="text-right">{p.quantiteVendue.toLocaleString("fr-FR")} {p.unite}</dd>
                   <dt className="text-[#8B8974]">Coût de production</dt>
                   <dd className="text-right">{money(p.coutProduction, data.ferme.devise)}</dd>
                   <dt className="text-[#8B8974]">Autres coûts liés</dt>
@@ -4729,8 +3843,6 @@ const STATUT_PRODUCTION_LABELS = {
 
 function ProductionCircuit({ data, update }) {
   const [showAdd, setShowAdd] = useState(false);
-  const [editingRecolte, setEditingRecolte] = useState(false);
-  const [editingVente, setEditingVente] = useState(false);
   const [selected, setSelected] = useState(null);
   const [filtreStatut, setFiltreStatut] = useState("tous");
   const [showSignature, setShowSignature] = useState(false);
@@ -4818,15 +3930,7 @@ function ProductionCircuit({ data, update }) {
       {p && p.statut === "recolte" && (
         <Modal title={p.produitNom} onClose={() => setSelected(null)}>
           <div className="space-y-3 text-sm">
-            <div className="flex items-center justify-between">
-              <Badge tone="default">{STATUT_PRODUCTION_LABELS[p.statut]}</Badge>
-              <div className="flex items-center gap-2">
-                <button onClick={() => setEditingRecolte(true)} className="text-[#8B5E3C] text-xs">Modifier la récolte</button>
-                <button onClick={() => { if (confirm("Supprimer cet enregistrement ?")) { update((d) => { d.productions = d.productions.filter((x) => x.id !== p.id); }); setSelected(null); } }} className="text-[#C7C2A8] hover:text-[#A6402A]">
-                  <Trash2 size={14} />
-                </button>
-              </div>
-            </div>
+            <Badge tone="default">{STATUT_PRODUCTION_LABELS[p.statut]}</Badge>
             <div className="flex justify-between"><span className="text-[#8B8974]">Récolté le</span><span>{fmtDate(p.date)}</span></div>
             <div className="flex justify-between"><span className="text-[#8B8974]">Quantité récoltée</span><span>{p.quantiteRecoltee} {p.unite}</span></div>
             <div className="flex justify-between"><span className="text-[#8B8974]">Agent de terrain</span><span>{p.agentTerrainNom || "—"}</span></div>
@@ -4853,15 +3957,7 @@ function ProductionCircuit({ data, update }) {
       {p && p.statut === "vente_enregistree" && (
         <Modal title={p.produitNom} onClose={() => setSelected(null)}>
           <div className="space-y-3 text-sm">
-            <div className="flex items-center justify-between">
-              <Badge tone="warn">{STATUT_PRODUCTION_LABELS[p.statut]}</Badge>
-              <div className="flex items-center gap-2">
-                <button onClick={() => setEditingVente(true)} className="text-[#8B5E3C] text-xs">Modifier la vente</button>
-                <button onClick={() => { if (confirm("Supprimer cet enregistrement ?")) { update((d) => { d.productions = d.productions.filter((x) => x.id !== p.id); }); setSelected(null); } }} className="text-[#C7C2A8] hover:text-[#A6402A]">
-                  <Trash2 size={14} />
-                </button>
-              </div>
-            </div>
+            <Badge tone="warn">{STATUT_PRODUCTION_LABELS[p.statut]}</Badge>
             <div className="flex justify-between"><span className="text-[#8B8974]">Quantité vendue</span><span>{p.quantiteVendue} {p.unite}</span></div>
             {Number(p.perte) > 0 && <div className="flex justify-between"><span className="text-[#8B8974]">Perte déclarée</span><span className="text-[#A6402A]">{p.perte} {p.unite}</span></div>}
             <div className="flex justify-between font-medium"><span>Montant de la vente</span><span>{money(p.montantVente, data.ferme.devise)}</span></div>
@@ -4953,48 +4049,18 @@ function ProductionCircuit({ data, update }) {
           />
         </Modal>
       )}
-
-      {editingRecolte && p && (
-        <Modal title="Modifier la récolte" onClose={() => setEditingRecolte(false)}>
-          <RecolteForm
-            initial={p}
-            produits={data.produits}
-            departements={data.departements}
-            employes={employesActifs}
-            onSubmit={(vals) => {
-              update((d) => { const target = d.productions.find((x) => x.id === p.id); Object.assign(target, vals); });
-              setEditingRecolte(false);
-            }}
-          />
-        </Modal>
-      )}
-
-      {editingVente && p && (
-        <Modal title="Modifier la vente" onClose={() => setEditingVente(false)}>
-          <VenteForm
-            initial={p}
-            produit={p}
-            devise={data.ferme.devise}
-            employes={employesActifs}
-            onSubmit={(vals) => {
-              update((d) => { const target = d.productions.find((x) => x.id === p.id); Object.assign(target, vals); });
-              setEditingVente(false);
-            }}
-          />
-        </Modal>
-      )}
     </div>
   );
 }
 
-function RecolteForm({ onSubmit, produits = [], departements = [], employes = [], initial }) {
-  const [produitNom, setProduitNom] = useState(initial?.produitNom || "");
-  const [unite, setUnite] = useState(initial?.unite || "");
-  const [departementId, setDepartementId] = useState(initial?.departementId || "");
-  const [quantiteRecoltee, setQuantiteRecoltee] = useState(initial?.quantiteRecoltee ?? "");
-  const [date, setDate] = useState(initial?.date || today());
-  const [agentTerrainId, setAgentTerrainId] = useState(initial?.agentTerrainId || "");
-  const [noteRecolte, setNoteRecolte] = useState(initial?.noteRecolte || "");
+function RecolteForm({ onSubmit, produits = [], departements = [], employes = [] }) {
+  const [produitNom, setProduitNom] = useState("");
+  const [unite, setUnite] = useState("");
+  const [departementId, setDepartementId] = useState("");
+  const [quantiteRecoltee, setQuantiteRecoltee] = useState("");
+  const [date, setDate] = useState(today());
+  const [agentTerrainId, setAgentTerrainId] = useState("");
+  const [noteRecolte, setNoteRecolte] = useState("");
 
   const choisirProduit = (nom) => {
     setProduitNom(nom);
@@ -5032,18 +4098,18 @@ function RecolteForm({ onSubmit, produits = [], departements = [], employes = []
         </Select>
       </Field>
       <Field label="Notes (optionnel)"><TextArea value={noteRecolte} onChange={(e) => setNoteRecolte(e.target.value)} /></Field>
-      <Button type="submit" variant="accent" className="w-full">{initial ? "Mettre à jour la récolte" : "Enregistrer la récolte"}</Button>
+      <Button type="submit" variant="accent" className="w-full">Enregistrer la récolte</Button>
     </form>
   );
 }
 
-function VenteForm({ onSubmit, produit, devise = "FCFA", employes = [], initial }) {
-  const [quantiteVendue, setQuantiteVendue] = useState(initial?.quantiteVendue ?? produit.quantiteRecoltee ?? "");
-  const [perte, setPerte] = useState(initial?.perte ?? 0);
-  const [prixUnitaire, setPrixUnitaire] = useState(initial?.prixUnitaire ?? "");
-  const [agentVenteId, setAgentVenteId] = useState(initial?.agentVenteId || "");
-  const [dateVente, setDateVente] = useState(initial?.dateVente || today());
-  const [noteVente, setNoteVente] = useState(initial?.noteVente || "");
+function VenteForm({ onSubmit, produit, devise = "FCFA", employes = [] }) {
+  const [quantiteVendue, setQuantiteVendue] = useState(produit.quantiteRecoltee || "");
+  const [perte, setPerte] = useState(0);
+  const [prixUnitaire, setPrixUnitaire] = useState("");
+  const [agentVenteId, setAgentVenteId] = useState("");
+  const [dateVente, setDateVente] = useState(today());
+  const [noteVente, setNoteVente] = useState("");
 
   const montantVente = Number(quantiteVendue || 0) * Number(prixUnitaire || 0);
 
@@ -5065,7 +4131,7 @@ function VenteForm({ onSubmit, produit, devise = "FCFA", employes = [], initial 
       </Field>
       <Field label="Date de vente"><Input type="date" value={dateVente} onChange={(e) => setDateVente(e.target.value)} /></Field>
       <Field label="Notes (optionnel)"><TextArea value={noteVente} onChange={(e) => setNoteVente(e.target.value)} /></Field>
-      <Button type="submit" variant="accent" className="w-full">{initial ? "Mettre à jour la vente" : "Enregistrer la vente et déclarer le versement"}</Button>
+      <Button type="submit" variant="accent" className="w-full">Enregistrer la vente et déclarer le versement</Button>
     </form>
   );
 }
@@ -5110,6 +4176,8 @@ function Personnel({ data, update }) {
   const [showPointage, setShowPointage] = useState(false);
   const [datePointage, setDatePointage] = useState(today());
   const [filtreDepartement, setFiltreDepartement] = useState("tous");
+  const [filtreCategorie, setFiltreCategorie] = useState("tous");
+  const categorieDe = (e) => CATEGORIE_PAR_POSTE[e.niveauHierarchique] || null;
   const employe = data.employes.find((e) => e.id === selected);
 
   if (employe) return <EmployeDetail employe={employe} data={data} update={update} onBack={() => setSelected(null)} />;
@@ -5118,7 +4186,9 @@ function Personnel({ data, update }) {
     .filter((e) => e.statut === "actif")
     .reduce((s, e) => s + Number(e.salaireMensuel || 0), 0);
 
-  const employesFiltres = filtreDepartement === "tous" ? data.employes : data.employes.filter((e) => e.departementId === filtreDepartement);
+  const employesFiltres = data.employes
+    .filter((e) => filtreDepartement === "tous" || e.departementId === filtreDepartement)
+    .filter((e) => filtreCategorie === "tous" || categorieDe(e) === filtreCategorie);
 
   const employesActifs = data.employes.filter((e) => e.statut === "actif");
   const pointageDuJour = (nom) => today() === datePointage
@@ -5191,6 +4261,20 @@ function Personnel({ data, update }) {
         </Card>
       )}
 
+      <div className="flex gap-2 overflow-x-auto no-scrollbar">
+        <button
+          onClick={() => setFiltreCategorie("tous")}
+          className={`px-3 py-1.5 rounded-full text-xs whitespace-nowrap border ${filtreCategorie === "tous" ? "bg-[var(--color-primary)] text-white border-[var(--color-primary)]" : "bg-white text-[#5A5744] border-[#DFD8C2]"}`}
+        >Toutes catégories</button>
+        {CATEGORIES_PERSONNEL.map((c) => (
+          <button
+            key={c.id}
+            onClick={() => setFiltreCategorie(c.id)}
+            className={`px-3 py-1.5 rounded-full text-xs whitespace-nowrap border ${filtreCategorie === c.id ? "bg-[var(--color-accent)] text-white border-[var(--color-accent)]" : "bg-white text-[#5A5744] border-[#DFD8C2]"}`}
+          >{c.label}</button>
+        ))}
+      </div>
+
       {data.departements.length > 0 && (
         <div className="flex gap-2 overflow-x-auto no-scrollbar">
           <button
@@ -5229,6 +4313,7 @@ function Personnel({ data, update }) {
                 <div className="flex items-center gap-2 mt-3 flex-wrap">
                   <Badge tone="accent">{CONTRAT_LABELS[e.typeContrat] || e.typeContrat}</Badge>
                   {e.niveauHierarchique && <Badge tone="default">{e.niveauHierarchique}</Badge>}
+                  {categorieDe(e) && <Badge tone="default">{CATEGORIES_PERSONNEL.find((c) => c.id === categorieDe(e))?.label}</Badge>}
                   {departement && <Badge tone="default">{departement.nom}</Badge>}
                   <Badge tone={e.statut === "actif" ? "good" : "default"}>{e.statut === "actif" ? "Actif" : "Inactif"}</Badge>
                   {congesEnCours.length > 0 && <Badge tone="warn">En congé</Badge>}
@@ -5258,10 +4343,8 @@ function Personnel({ data, update }) {
 
 function EmployeForm({ onSubmit, initial, departements = [], sectionsProduction = [] }) {
   const [nom, setNom] = useState(initial?.nom || "");
-  const [sexe, setSexe] = useState(initial?.sexe || "");
-  const [niveauEtude, setNiveauEtude] = useState(initial?.niveauEtude || "");
-  const [poste, setPoste] = useState(initial?.poste || POSTES_SUGGERES[0]);
-  const [niveauHierarchique, setNiveauHierarchique] = useState(initial?.niveauHierarchique || NIVEAUX_HIERARCHIQUES[0]);
+  const [poste, setPoste] = useState(initial?.poste || "");
+  const [niveauHierarchique, setNiveauHierarchique] = useState(initial?.niveauHierarchique || HIERARCHIE_POSTES[0]);
   const [sectionProduction, setSectionProduction] = useState(initial?.sectionProduction || "");
   const [competence, setCompetence] = useState(initial?.competence || "");
   const [departementId, setDepartementId] = useState(initial?.departementId || "");
@@ -5273,71 +4356,28 @@ function EmployeForm({ onSubmit, initial, departements = [], sectionsProduction 
   const [telephone, setTelephone] = useState(initial?.telephone || "");
   const [situationFamiliale, setSituationFamiliale] = useState(initial?.situationFamiliale || "celibataire");
   const [nombreEnfants, setNombreEnfants] = useState(initial?.nombreEnfants ?? 0);
-  // Si l'employé a un intitulé de poste enregistré avant l'introduction de cette
-  // liste (texte libre à l'époque, ex. "Ouvrier agricole"), on l'ajoute en tête
-  // de liste pour qu'il reste visible et sélectionné plutôt que d'être perdu.
-  const optionsPoste = poste && !POSTES_SUGGERES.includes(poste) ? [poste, ...POSTES_SUGGERES] : POSTES_SUGGERES;
-  // Le champ Département reste affiché (et n'est pas effacé à l'enregistrement) si le
-  // poste n'est pas reconnu dans la liste (ancien intitulé texte libre) — pour ne pas
-  // perdre un département déjà assigné à un employé enregistré avant ce changement.
-  const afficherDepartement = !POSTES_SUGGERES.includes(poste) || NIVEAUX_AVEC_DEPARTEMENT.includes(poste);
   return (
     <form className="space-y-3" onSubmit={(e) => {
       e.preventDefault(); if (!nom) return;
       onSubmit({
-        nom, sexe, niveauEtude, poste, niveauHierarchique, sectionProduction, competence,
-        departementId: afficherDepartement ? (departementId || null) : null,
+        nom, poste, niveauHierarchique, sectionProduction, competence, departementId: departementId || null,
         typeContrat, salaireMensuel: salaireMensuel || 0, dateDebut, dateFin: dateFin || null, statut, telephone,
         situationFamiliale, nombreEnfants: nombreEnfants || 0,
       });
     }}>
       <Field label="Nom complet"><Input value={nom} onChange={(e) => setNom(e.target.value)} required /></Field>
-      <Field label="Sexe">
-        <Select value={sexe} onChange={(e) => setSexe(e.target.value)}>
-          <option value="">Non précisé</option>
-          <option value="homme">Homme</option>
-          <option value="femme">Femme</option>
-        </Select>
-      </Field>
-      <Field label="Niveau d'étude">
-        <Select value={niveauEtude} onChange={(e) => setNiveauEtude(e.target.value)}>
-          <option value="">Non précisé</option>
-          <option value="cap">CAP</option>
-          <option value="bt">BT</option>
-          <option value="duts">DUTS</option>
-          <option value="licence">Licence</option>
-          <option value="master">Master</option>
-          <option value="doctorat">Doctorat</option>
-          <option value="certificat">Certificat</option>
-          <option value="attestation">Attestation</option>
-          <option value="autres">Autres</option>
-        </Select>
-      </Field>
-      <Field label="Intitulé du poste">
-        <Select value={poste} onChange={(e) => setPoste(e.target.value)}>
-          {optionsPoste.map((p) => <option key={p} value={p}>{p}</option>)}
-        </Select>
-      </Field>
+      <Field label="Intitulé du poste"><Input value={poste} onChange={(e) => setPoste(e.target.value)} placeholder="Ex. Ouvrier agricole, Vacher..." /></Field>
       <Field label="Niveau hiérarchique">
         <Select value={niveauHierarchique} onChange={(e) => setNiveauHierarchique(e.target.value)}>
-          {NIVEAUX_HIERARCHIQUES.map((n) => <option key={n} value={n}>{n}</option>)}
+          {HIERARCHIE_POSTES.map((p) => <option key={p} value={p}>{p}</option>)}
         </Select>
       </Field>
-      {departements.length > 0 && afficherDepartement && (
-        <Field label="Département">
-          <Select value={departementId} onChange={(e) => setDepartementId(e.target.value)}>
-            <option value="">Non précisé</option>
-            {departements.filter((d) => d.actif !== false).map((d) => <option key={d.id} value={d.id}>{d.nom}</option>)}
-          </Select>
-        </Field>
-      )}
-      {poste === "Technicien de production" && (
+      {niveauHierarchique === "Technicien de production" && (
         <Field label="Unité / section de production">
           <Input list="sections-production" value={sectionProduction} onChange={(e) => setSectionProduction(e.target.value)} placeholder="Ex. Maraîchage, Pisciculture..." />
           <datalist id="sections-production">
-            {sectionsProduction.filter((s) => s.actif !== false && (!departementId || s.departementId === departementId)).map((s) => <option key={s.id} value={s.nom} />)}
+            {sectionsProduction.filter((s) => s.actif !== false).map((s) => <option key={s.id} value={s.nom} />)}
           </datalist>
-          {departementId && <p className="text-xs text-[#8B8974] mt-1">Sections proposées pour le département choisi.</p>}
         </Field>
       )}
       <Field label="Type de compétence">
@@ -5346,6 +4386,14 @@ function EmployeForm({ onSubmit, initial, departements = [], sectionsProduction 
           {COMPETENCES_SUGGESTIONS.map((c) => <option key={c} value={c} />)}
         </datalist>
       </Field>
+      {departements.length > 0 && (
+        <Field label="Département">
+          <Select value={departementId} onChange={(e) => setDepartementId(e.target.value)}>
+            <option value="">Non précisé</option>
+            {departements.filter((d) => d.actif !== false).map((d) => <option key={d.id} value={d.id}>{d.nom}</option>)}
+          </Select>
+        </Field>
+      )}
       <Field label="Téléphone"><Input value={telephone} onChange={(e) => setTelephone(e.target.value)} /></Field>
       <Field label="Type de contrat">
         <Select value={typeContrat} onChange={(e) => setTypeContrat(e.target.value)}>
@@ -5399,13 +4447,9 @@ function calculAnciennete(dateDebut, dateFin) {
 function EmployeDetail({ employe, data, update, onBack }) {
   const [showEdit, setShowEdit] = useState(false);
   const [showConge, setShowConge] = useState(false);
-  const [editingConge, setEditingConge] = useState(null);
   const [showPaie, setShowPaie] = useState(false);
   const [showEvaluation, setShowEvaluation] = useState(false);
-  const [editingEvaluation, setEditingEvaluation] = useState(null);
   const [showDocument, setShowDocument] = useState(false);
-  const [editingDocument, setEditingDocument] = useState(null);
-  const [editingPresence, setEditingPresence] = useState(null);
   const [showBulletin, setShowBulletin] = useState(false);
   const [selectedBulletin, setSelectedBulletin] = useState(null);
   const moisCourant = today().slice(0, 7);
@@ -5483,15 +4527,9 @@ function EmployeDetail({ employe, data, update, onBack }) {
         ) : (
           <ul className="mt-2 space-y-1 text-sm">
             {[...employe.conges].reverse().map((c) => (
-              <li key={c.id} className="flex items-center justify-between border-b border-[#EFEAD9] pb-1">
+              <li key={c.id} className="flex justify-between border-b border-[#EFEAD9] pb-1">
                 <span>{{ paye: "Congé payé", maladie: "Congé maladie", sans_solde: "Sans solde" }[c.type] || c.type}</span>
-                <div className="flex items-center gap-2">
-                  <span className="text-[#8B8974]">{fmtDate(c.dateDebut)} → {fmtDate(c.dateFin)}</span>
-                  <button onClick={() => setEditingConge(c.id)} className="text-[#8B5E3C] text-xs">Modifier</button>
-                  <button onClick={() => update((d) => { const e = d.employes.find((x) => x.id === employe.id); e.conges = e.conges.filter((x) => x.id !== c.id); })} className="text-[#C7C2A8] hover:text-[#A6402A]">
-                    <Trash2 size={12} />
-                  </button>
-                </div>
+                <span className="text-[#8B8974]">{fmtDate(c.dateDebut)} → {fmtDate(c.dateFin)}</span>
               </li>
             ))}
           </ul>
@@ -5518,13 +4556,11 @@ function EmployeDetail({ employe, data, update, onBack }) {
                 </div>
                 <ul className="space-y-1 text-sm max-h-56 overflow-y-auto">
                   {[...employe.presences].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 30).map((p) => (
-                    <li key={p.id} className="flex items-center justify-between border-b border-[#EFEAD9] pb-1">
+                    <li key={p.id} className="flex justify-between border-b border-[#EFEAD9] pb-1">
                       <span>{fmtDate(p.date)}</span>
-                      <button onClick={() => setEditingPresence(p.id)} className="flex items-center gap-1">
-                        <Badge tone={p.statut === "present" ? "good" : p.statut === "absent" ? "bad" : "warn"}>
-                          {{ present: "Présent", absent: "Absent", retard: "Retard" }[p.statut] || p.statut}
-                        </Badge>
-                      </button>
+                      <Badge tone={p.statut === "present" ? "good" : p.statut === "absent" ? "bad" : "warn"}>
+                        {{ present: "Présent", absent: "Absent", retard: "Retard" }[p.statut] || p.statut}
+                      </Badge>
                     </li>
                   ))}
                 </ul>
@@ -5546,15 +4582,9 @@ function EmployeDetail({ employe, data, update, onBack }) {
             <ul className="mt-2 space-y-2 text-sm">
               {[...employe.evaluations].reverse().map((ev) => (
                 <li key={ev.id} className="border-b border-[#EFEAD9] pb-2">
-                  <div className="flex justify-between items-center">
+                  <div className="flex justify-between">
                     <span className="font-medium">{ev.service || "Service non précisé"}</span>
-                    <div className="flex items-center gap-2">
-                      <span className="text-[#8B5E14]">{"★".repeat(Number(ev.note || 0))}{"☆".repeat(5 - Number(ev.note || 0))}</span>
-                      <button onClick={() => setEditingEvaluation(ev.id)} className="text-[#8B5E3C] text-xs">Modifier</button>
-                      <button onClick={() => update((d) => { const e = d.employes.find((x) => x.id === employe.id); e.evaluations = e.evaluations.filter((x) => x.id !== ev.id); })} className="text-[#C7C2A8] hover:text-[#A6402A]">
-                        <Trash2 size={12} />
-                      </button>
-                    </div>
+                    <span className="text-[#8B5E14]">{"★".repeat(Number(ev.note || 0))}{"☆".repeat(5 - Number(ev.note || 0))}</span>
                   </div>
                   <p className="text-xs text-[#8B8974]">{fmtDate(ev.date)}</p>
                   {ev.commentaire && <p className="text-xs mt-0.5">{ev.commentaire}</p>}
@@ -5581,7 +4611,6 @@ function EmployeDetail({ employe, data, update, onBack }) {
                 <div className="flex items-center gap-2 shrink-0">
                   {doc.fichier && <a href={doc.fichier} download={doc.nom} className="text-[#8B5E3C] text-xs">Voir</a>}
                   <span className="text-xs text-[#8B8974]">{fmtDate(doc.date)}</span>
-                  <button onClick={() => setEditingDocument(doc.id)} className="text-[#8B5E3C] text-xs">Modifier</button>
                   <button onClick={() => update((d) => { const e = d.employes.find((x) => x.id === employe.id); e.documentsPerso = e.documentsPerso.filter((x) => x.id !== doc.id); })} className="text-[#C7C2A8] hover:text-[#A6402A]">
                     <Trash2 size={12} />
                   </button>
@@ -5613,30 +4642,6 @@ function EmployeDetail({ employe, data, update, onBack }) {
             onSubmit={(vals) => {
               update((d) => { const e = d.employes.find((x) => x.id === employe.id); e.conges = e.conges || []; e.conges.push({ id: uid(), ...vals }); });
               setShowConge(false);
-            }}
-          />
-        </Modal>
-      )}
-
-      {editingConge && (
-        <Modal title="Modifier le congé" onClose={() => setEditingConge(null)}>
-          <CongeForm
-            initial={employe.conges.find((c) => c.id === editingConge)}
-            onSubmit={(vals) => {
-              update((d) => { const e = d.employes.find((x) => x.id === employe.id); const c = e.conges.find((x) => x.id === editingConge); Object.assign(c, vals); });
-              setEditingConge(null);
-            }}
-          />
-        </Modal>
-      )}
-
-      {editingPresence && (
-        <Modal title="Modifier le pointage" onClose={() => setEditingPresence(null)}>
-          <PresenceForm
-            initial={employe.presences.find((p) => p.id === editingPresence)}
-            onSubmit={(vals) => {
-              update((d) => { const e = d.employes.find((x) => x.id === employe.id); const p = e.presences.find((x) => x.id === editingPresence); Object.assign(p, vals); });
-              setEditingPresence(null);
             }}
           />
         </Modal>
@@ -5680,36 +4685,12 @@ function EmployeDetail({ employe, data, update, onBack }) {
         </Modal>
       )}
 
-      {editingEvaluation && (
-        <Modal title="Modifier l'évaluation" onClose={() => setEditingEvaluation(null)}>
-          <EvaluationForm
-            initial={employe.evaluations.find((ev) => ev.id === editingEvaluation)}
-            onSubmit={(vals) => {
-              update((d) => { const e = d.employes.find((x) => x.id === employe.id); const ev = e.evaluations.find((x) => x.id === editingEvaluation); Object.assign(ev, vals); });
-              setEditingEvaluation(null);
-            }}
-          />
-        </Modal>
-      )}
-
       {showDocument && (
         <Modal title="Nouveau document" onClose={() => setShowDocument(false)}>
           <DocumentPersoForm
             onSubmit={(vals) => {
               update((d) => { const e = d.employes.find((x) => x.id === employe.id); e.documentsPerso = e.documentsPerso || []; e.documentsPerso.push({ id: uid(), ...vals }); });
               setShowDocument(false);
-            }}
-          />
-        </Modal>
-      )}
-
-      {editingDocument && (
-        <Modal title="Modifier le document" onClose={() => setEditingDocument(null)}>
-          <DocumentPersoForm
-            initial={employe.documentsPerso.find((doc) => doc.id === editingDocument)}
-            onSubmit={(vals) => {
-              update((d) => { const e = d.employes.find((x) => x.id === employe.id); const doc = e.documentsPerso.find((x) => x.id === editingDocument); Object.assign(doc, vals); });
-              setEditingDocument(null);
             }}
           />
         </Modal>
@@ -5845,11 +4826,11 @@ function BulletinPaieDetail({ bulletin: b, employe, devise, nomFerme }) {
   );
 }
 
-function EvaluationForm({ onSubmit, initial }) {
-  const [service, setService] = useState(initial?.service || "");
-  const [note, setNote] = useState(initial?.note ?? 5);
-  const [date, setDate] = useState(initial?.date || today());
-  const [commentaire, setCommentaire] = useState(initial?.commentaire || "");
+function EvaluationForm({ onSubmit }) {
+  const [service, setService] = useState("");
+  const [note, setNote] = useState(5);
+  const [date, setDate] = useState(today());
+  const [commentaire, setCommentaire] = useState("");
   return (
     <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); onSubmit({ service, note, date, commentaire }); }}>
       <Field label="Service / poste évalué"><Input value={service} onChange={(e) => setService(e.target.value)} placeholder="Ex. Traite du lait, Gardiennage..." /></Field>
@@ -5867,16 +4848,16 @@ function EvaluationForm({ onSubmit, initial }) {
         </div>
       </Field>
       <Field label="Commentaire (optionnel)"><TextArea value={commentaire} onChange={(e) => setCommentaire(e.target.value)} placeholder="Ponctualité, qualité du travail, assiduité, initiative..." /></Field>
-      <Button type="submit" variant="accent" className="w-full">{initial ? "Mettre à jour" : "Enregistrer"}</Button>
+      <Button type="submit" variant="accent" className="w-full">Enregistrer</Button>
     </form>
   );
 }
 
-function DocumentPersoForm({ onSubmit, initial }) {
-  const [type, setType] = useState(initial?.type || "cv");
-  const [nom, setNom] = useState(initial?.nom || "");
-  const [date, setDate] = useState(initial?.date || today());
-  const [fichier, setFichier] = useState(initial?.fichier || null);
+function DocumentPersoForm({ onSubmit }) {
+  const [type, setType] = useState("cv");
+  const [nom, setNom] = useState("");
+  const [date, setDate] = useState(today());
+  const [fichier, setFichier] = useState(null);
   const [error, setError] = useState("");
 
   const uploadFichier = (e) => {
@@ -5900,20 +4881,20 @@ function DocumentPersoForm({ onSubmit, initial }) {
       </Field>
       <Field label="Nom / intitulé"><Input value={nom} onChange={(e) => setNom(e.target.value)} placeholder="Ex. CV 2026, Attestation de travail..." /></Field>
       <Field label="Date"><Input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></Field>
-      <Field label={initial?.fichier ? "Remplacer le fichier (optionnel, max 1 Mo)" : "Fichier (image ou PDF, optionnel, max 1 Mo)"}>
+      <Field label="Fichier (image ou PDF, optionnel, max 1 Mo)">
         <input type="file" accept="image/*,.pdf" onChange={uploadFichier} className="text-sm" />
       </Field>
       {error && <p className="text-xs text-[#A6402A]">{error}</p>}
-      <Button type="submit" variant="accent" className="w-full">{initial ? "Mettre à jour" : "Enregistrer"}</Button>
+      <Button type="submit" variant="accent" className="w-full">Enregistrer</Button>
     </form>
   );
 }
 
-function CongeForm({ onSubmit, initial }) {
-  const [type, setType] = useState(initial?.type || "paye");
-  const [dateDebut, setDateDebut] = useState(initial?.dateDebut || today());
-  const [dateFin, setDateFin] = useState(initial?.dateFin || today());
-  const [statut, setStatut] = useState(initial?.statut || "planifie");
+function CongeForm({ onSubmit }) {
+  const [type, setType] = useState("paye");
+  const [dateDebut, setDateDebut] = useState(today());
+  const [dateFin, setDateFin] = useState(today());
+  const [statut, setStatut] = useState("planifie");
   return (
     <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); onSubmit({ type, dateDebut, dateFin, statut }); }}>
       <Field label="Type de congé">
@@ -5925,25 +4906,7 @@ function CongeForm({ onSubmit, initial }) {
       </Field>
       <Field label="Date de début"><Input type="date" value={dateDebut} onChange={(e) => setDateDebut(e.target.value)} /></Field>
       <Field label="Date de fin"><Input type="date" value={dateFin} onChange={(e) => setDateFin(e.target.value)} /></Field>
-      <Button type="submit" variant="accent" className="w-full">{initial ? "Mettre à jour" : "Enregistrer"}</Button>
-    </form>
-  );
-}
-
-function PresenceForm({ onSubmit, initial }) {
-  const [date, setDate] = useState(initial?.date || today());
-  const [statut, setStatut] = useState(initial?.statut || "present");
-  return (
-    <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); onSubmit({ date, statut }); }}>
-      <Field label="Date"><Input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></Field>
-      <Field label="Statut">
-        <Select value={statut} onChange={(e) => setStatut(e.target.value)}>
-          <option value="present">Présent</option>
-          <option value="absent">Absent</option>
-          <option value="retard">Retard</option>
-        </Select>
-      </Field>
-      <Button type="submit" variant="accent" className="w-full">Mettre à jour</Button>
+      <Button type="submit" variant="accent" className="w-full">Enregistrer</Button>
     </form>
   );
 }
